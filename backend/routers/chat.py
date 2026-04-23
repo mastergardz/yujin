@@ -49,7 +49,7 @@ async def websocket_chat(websocket: WebSocket, db: AsyncSession = Depends(get_db
             yujin_model = config.llm_model if config else None
 
             # process with yujin agent
-            result = await process_message(user_msg, teams_data, yujin_model)
+            result = await process_message(user_msg, teams_data, yujin_model, db)
 
             # save yujin response
             yujin_record = ChatMessage(

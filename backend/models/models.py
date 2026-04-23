@@ -10,7 +10,7 @@ class Team(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String(100), nullable=False)
     description = Column(Text)
-    status = Column(String(20), default="active")  # active, paused
+    status = Column(String(20), default="active")
     llm_model = Column(String(100))
     created_at = Column(DateTime, default=datetime.utcnow)
     workers = relationship("Worker", back_populates="team", cascade="all, delete-orphan")
@@ -23,14 +23,14 @@ class Worker(Base):
     role = Column(String(200))
     system_prompt = Column(Text)
     llm_model = Column(String(100))
-    status = Column(String(20), default="idle")  # idle, working, done
+    status = Column(String(20), default="idle")
     created_at = Column(DateTime, default=datetime.utcnow)
     team = relationship("Team", back_populates="workers")
 
 class ChatMessage(Base):
     __tablename__ = "yujin_chat_messages"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    role = Column(String(20), nullable=False)  # user, yujin
+    role = Column(String(20), nullable=False)
     content = Column(Text, nullable=False)
     extra_data = Column(JSON, default={})
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -38,5 +38,6 @@ class ChatMessage(Base):
 class YujinConfig(Base):
     __tablename__ = "yujin_config"
     id = Column(Integer, primary_key=True, default=1)
-    llm_model = Column(String(100), default="gemini-2.0-flash-exp")
+    llm_model = Column(String(100), default="gemini-2.0-flash")
+    api_key = Column(String(200), nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

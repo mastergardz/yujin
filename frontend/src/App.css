@@ -65,3 +65,16 @@ main { flex: 1; overflow: hidden; }
 .setting-row select { background: #0f0f1e; border: 1px solid #3d3d6e; color: #e0e0e0; padding: 8px 12px; border-radius: 8px; }
 .setting-row button { background: #7c83fd; color: white; border: none; padding: 8px 20px; border-radius: 8px; cursor: pointer; }
 .note { color: #666; font-size: 0.85rem; margin-top: 8px; }
+
+.setting-section { background: #1a1a2e; border-radius: 12px; padding: 20px; margin-bottom: 16px; }
+.setting-section h3 { color: #7c83fd; margin-bottom: 16px; font-size: 1rem; }
+.current-key { color: #888; font-size: 0.85rem; margin-bottom: 12px; }
+.current-key code { background: #0f0f1e; padding: 2px 8px; border-radius: 4px; color: #7dcc7d; }
+.key-input { flex: 1; background: #0f0f1e; border: 1px solid #3d3d6e; color: #e0e0e0; padding: 10px 16px; border-radius: 8px; font-size: 0.9rem; outline: none; }
+.key-input:focus { border-color: #7c83fd; }
+.toggle-btn { background: transparent; border: 1px solid #3d3d6e; color: #aaa; padding: 10px 12px; border-radius: 8px; cursor: pointer; }
+.setting-section .setting-row { display: flex; gap: 8px; align-items: center; }
+.setting-section select { background: #0f0f1e; border: 1px solid #3d3d6e; color: #e0e0e0; padding: 10px 12px; border-radius: 8px; flex: 1; }
+.setting-section button { background: #7c83fd; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; white-space: nowrap; }
+.setting-section button:disabled { background: #3d3d6e; cursor: not-allowed; }
+.note a { color: #7c83fd; }
