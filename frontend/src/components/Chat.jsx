@@ -1,3 +1,4 @@
+import YujinAvatar from './YujinAvatar'
 import { useState, useEffect, useRef, useCallback } from 'react'
 
 export default function Chat() {
@@ -178,7 +179,7 @@ export default function Chat() {
           )}
           {messages.map((m, i) => (
             <div key={i} className={`message ${m.role}`}>
-              {m.role === 'yujin' && <div className="avatar">Y</div>}
+              {m.role === 'yujin' && <YujinAvatar />}
               <div className="msg-body">
                 <div className="bubble">{m.content}</div>
                 {m.role === 'yujin' && m.model_used && (
@@ -209,7 +210,7 @@ export default function Chat() {
           ))}
           {pending && (
             <div className="message yujin">
-              <div className="avatar">Y</div>
+              <YujinAvatar />
               <div className="msg-body">
                 <div className="bubble typing">
                   <span></span><span></span><span></span>

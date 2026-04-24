@@ -279,3 +279,10 @@ body { background: #0d0d14; color: #e0e0e0; font-family: 'Segoe UI', -apple-syst
 }
 .workspace-input textarea:focus { border-color: #a78bfa; }
 .workspace-input textarea:disabled { opacity: 0.4; }
+
+.yujin-avatar {
+  background: linear-gradient(135deg, #1a0a2e, #2d1b4e);
+  border: 1px solid #a78bfa;
+  font-size: 0.95rem;
+  color: #e0c8ff;
+}

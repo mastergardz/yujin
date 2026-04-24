@@ -1,3 +1,4 @@
+import YujinAvatar from './YujinAvatar'
 import { useState, useEffect, useRef, useCallback } from 'react'
 
 export default function Workspace({ team }) {
@@ -65,7 +66,7 @@ export default function Workspace({ team }) {
         {messages.map((m, i) => (
           <div key={i} className="ws-msg" style={{background: senderBg(m.sender_type)}}>
             <div className="ws-sender" style={{color: senderColor(m.sender_type)}}>
-              {m.sender_type === 'yujin' ? '🤖' : '👤'} {m.sender}
+              {m.sender_type === 'yujin' && <YujinAvatar size={20} />} {m.sender}
             </div>
             <div className="ws-content">{m.content}</div>
             <div className="ws-time">{new Date(m.created_at).toLocaleTimeString('th-TH')}</div>
