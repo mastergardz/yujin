@@ -27,12 +27,7 @@ function getWorkerColor(name, workerNames) {
 function Avatar({ sender, senderType, workerNames }) {
   if (senderType === 'yujin') return <YujinAvatar size={32} />
   if (senderType === 'user') return (
-    <div style={{
-      width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
-      background: '#fef3c7', border: '1.5px solid #fcd34d',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      fontSize: '0.75rem', fontWeight: 700, color: '#92400e'
-    }}>พี่</div>
+    <img src="/gard.png" style={{width:32,height:32,borderRadius:'50%',objectFit:'cover',flexShrink:0}} alt="พี่การ์ด" />
   )
   const color = getWorkerColor(sender, workerNames)
   return (
