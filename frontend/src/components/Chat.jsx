@@ -217,7 +217,7 @@ export default function Chat() {
                 )}
                 {m.approved && <div className="approved-badge">✅ สร้างทีมแล้ว</div>}
               </div>
-              {m.role === "user" && <img src="/gard.jpg" className="avatar user-avatar-img" alt="พี่การ์ด" />}
+              {m.role === "user" && <img src="/gard.png" className="avatar user-avatar-img" alt="พี่การ์ด" />}
             </div>
           ))}
           {pending && (
