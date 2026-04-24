@@ -188,12 +188,31 @@ async def run_worker_with_tools(
     personality_line = f"นิสัย: {worker.personality}" if getattr(worker, 'personality', None) else "บุคลิก: สุภาพ ฉลาด ทำงานเป็น"
     speech_line = f"สไตล์การพูด: {worker.speech_style}" if getattr(worker, 'speech_style', None) else "ใช้คำลงท้าย คะ ค่ะ ขา ค่า จ๊ะ"
 
+    # Inject skill content from DB
+    skill_block = ""
+    worker_skills = getattr(worker, 'skills', None) or []
+    if worker_skills and db:
+        from sqlalchemy import text as sa_text
+        try:
+            result = await db.execute(
+                sa_text("SELECT name, content FROM yujin_skills WHERE id = ANY(:ids)"),
+                {"ids": worker_skills}
+            )
+            skill_rows = result.fetchall()
+            if skill_rows:
+                skill_block = "\n\n## Skills & มาตรฐานการทำงานของคุณ\n" + "\n\n".join(
+                    f"### {r.name}\n{r.content}" for r in skill_rows
+                )
+        except Exception:
+            pass
+
     system_prompt = (
         f"คุณชื่อ {worker.name} เป็นผู้หญิง ทำหน้าที่ {worker.role}\n"
         f"{personality_line}\n"
         f"{speech_line}\n"
         f"เรียกตัวเองว่าหนู ส่งผลงานจริงๆ ไม่ใช่อธิบายว่าจะทำอะไร"
         + (f"\n{worker.system_prompt}" if getattr(worker, 'system_prompt', None) else "")
+        + skill_block
         + tool_instructions
         + image_mandate
     )

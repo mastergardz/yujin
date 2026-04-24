@@ -137,6 +137,7 @@ export default function Workspace({ team: initialTeam, onTeamUpdated }) {
   const [editingWorker, setEditingWorker] = useState(null)
   const [editingPersona, setEditingPersona] = useState(null) // worker id
   const [personaForm, setPersonaForm] = useState({}) // {avatar, personality, speech_style}
+  const [allSkills, setAllSkills] = useState([])
   const [recruitRequest, setRecruitRequest] = useState(null) // {name, role, llm_model, capabilities, reason}
   const wsRef = useRef(null)
   const bottomRef = useRef(null)
@@ -166,7 +167,8 @@ export default function Workspace({ team: initialTeam, onTeamUpdated }) {
 
   const openPersona = (w) => {
     setEditingPersona(w.id)
-    setPersonaForm({ avatar: w.avatar || '', personality: w.personality || '', speech_style: w.speech_style || '' })
+    setPersonaForm({ avatar: w.avatar || '', personality: w.personality || '', speech_style: w.speech_style || '', skills: w.skills || [] })
+    fetch('/api/skills/').then(r => r.json()).then(setAllSkills)
   }
 
   const savePersona = async (workerId) => {
@@ -390,8 +392,29 @@ export default function Workspace({ team: initialTeam, onTeamUpdated }) {
                 onChange={e => setPersonaForm(p => ({...p, speech_style: e.target.value}))}
                 placeholder="เช่น พูดสั้น กระชับ ตรงประเด็น ไม่อ้อมค้อม"
                 rows={2}
-                style={{width:'100%',padding:'8px 10px',borderRadius:8,border:'1px solid #e5e5ea',fontSize:'0.9rem',marginBottom:16,resize:'vertical',boxSizing:'border-box'}}
+                style={{width:'100%',padding:'8px 10px',borderRadius:8,border:'1px solid #e5e5ea',fontSize:'0.9rem',marginBottom:12,resize:'vertical',boxSizing:'border-box'}}
               />
+              <label style={{fontSize:'0.8rem',color:'#555',display:'block',marginBottom:6}}>📚 Skills</label>
+              {allSkills.length === 0 && <div style={{fontSize:'0.75rem',color:'#aaa',marginBottom:12}}>ยังไม่มี skill ค่ะ สร้างได้ที่หน้า Skills</div>}
+              <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:16}}>
+                {allSkills.map(s => {
+                  const active = (personaForm.skills || []).includes(s.id)
+                  return (
+                    <span key={s.id}
+                      onClick={() => setPersonaForm(p => ({
+                        ...p,
+                        skills: active ? (p.skills||[]).filter(id => id !== s.id) : [...(p.skills||[]), s.id]
+                      }))}
+                      style={{
+                        padding:'4px 10px', borderRadius:20, fontSize:'0.75rem', cursor:'pointer',
+                        background: active ? '#7c3aed' : '#f3f4f6',
+                        color: active ? 'white' : '#555',
+                        border: `1px solid ${active ? '#7c3aed' : '#e5e5ea'}`,
+                      }}
+                    >{active ? '✓ ' : ''}{s.name}</span>
+                  )
+                })}
+              </div>
               <div style={{display:'flex',gap:8}}>
                 <button onClick={() => savePersona(w.id)}
                   style={{flex:1,background:'#7c3aed',color:'white',border:'none',borderRadius:10,padding:'10px',fontWeight:600,cursor:'pointer'}}>

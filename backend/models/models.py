@@ -27,7 +27,8 @@ class Worker(Base):
     capabilities = Column(JSON, default=list)
     avatar = Column(Text, nullable=True)        # emoji or initials override
     personality = Column(Text, nullable=True)   # นิสัย เช่น "ขยัน ละเอียด ชอบตรวจสอบซ้ำ"
-    speech_style = Column(Text, nullable=True)  # สไตล์การพูด เช่น "สั้น กระชับ ไม่อ้อมค้อม"
+    speech_style = Column(Text, nullable=True)
+    skills = Column(JSON, default=list)     # list of skill IDs
     created_at = Column(DateTime, default=datetime.utcnow)
     team = relationship("Team", back_populates="workers")
 

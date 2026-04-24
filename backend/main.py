@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from core.database import init_db
-from routers import chat, teams, config, rooms, workspace, files
+from routers import chat, teams, config, rooms, workspace, files, skills
 
 app = FastAPI(title="Yujin AI Secretary")
 
@@ -19,6 +19,7 @@ app.include_router(config.router)
 app.include_router(rooms.router)
 app.include_router(workspace.router)
 app.include_router(files.router)
+app.include_router(skills.router)
 
 @app.on_event("startup")
 async def startup():

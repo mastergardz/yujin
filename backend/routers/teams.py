@@ -48,6 +48,7 @@ class WorkerCreate(BaseModel):
     avatar: Optional[str] = None
     personality: Optional[str] = None
     speech_style: Optional[str] = None
+    skills: Optional[List[str]] = []
 
 class TeamApprove(BaseModel):
     team_name: str
@@ -70,7 +71,8 @@ async def get_teams(db: AsyncSession = Depends(get_db)):
                 "id": str(w.id), "name": w.name, "role": w.role,
                 "llm_model": w.llm_model, "status": w.status,
                 "capabilities": w.capabilities or [],
-                "avatar": w.avatar, "personality": w.personality, "speech_style": w.speech_style
+                "avatar": w.avatar, "personality": w.personality, "speech_style": w.speech_style,
+                "skills": w.skills or []
             } for w in workers]
         })
     return response
@@ -98,6 +100,7 @@ async def approve_team(data: TeamApprove, db: AsyncSession = Depends(get_db)):
             avatar=w.avatar,
             personality=w.personality,
             speech_style=w.speech_style,
+            skills=w.skills or [],
         )
         db.add(worker)
 
@@ -120,6 +123,7 @@ class WorkerUpdate(BaseModel):
     avatar: Optional[str] = None
     personality: Optional[str] = None
     speech_style: Optional[str] = None
+    skills: Optional[List[str]] = None
 
 @router.patch("/workers/{worker_id}")
 async def update_worker(worker_id: str, data: WorkerUpdate, db: AsyncSession = Depends(get_db)):
@@ -142,6 +146,8 @@ async def update_worker(worker_id: str, data: WorkerUpdate, db: AsyncSession = D
         worker.personality = data.personality
     if data.speech_style is not None:
         worker.speech_style = data.speech_style
+    if data.skills is not None:
+        worker.skills = data.skills
     await db.commit()
     return {
         "success": True,
@@ -152,6 +158,7 @@ async def update_worker(worker_id: str, data: WorkerUpdate, db: AsyncSession = D
         "avatar": worker.avatar,
         "personality": worker.personality,
         "speech_style": worker.speech_style,
+        "skills": worker.skills or [],
     }
 
 @router.delete("/workers/{worker_id}")
