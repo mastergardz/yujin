@@ -49,6 +49,7 @@ export default function Workspace({ team }) {
   const [task, setTask] = useState('')
   const [connected, setConnected] = useState(false)
   const [running, setRunning] = useState(false)
+  const [typingInfo, setTypingInfo] = useState(null) // {sender, senderType}
   const [attachedFile, setAttachedFile] = useState(null)   // { name, analysis, mime }
   const [analyzing, setAnalyzing] = useState(false)
   const wsRef = useRef(null)
@@ -65,10 +66,16 @@ export default function Workspace({ team }) {
     ws.onclose = () => {
       setConnected(false)
       setRunning(false)
+      setTypingInfo(null)
       reconnectTimer.current = setTimeout(connect, 3000)
     }
     ws.onmessage = (e) => {
       const data = JSON.parse(e.data)
+      if (data.type === 'typing') {
+        setTypingInfo({ sender: data.sender, senderType: data.sender_type })
+        return
+      }
+      setTypingInfo(null)
       setMessages(prev => [...prev, data])
       if (data.sender_type === 'yujin' && !data.content.includes('รับงานแล้ว') && !data.content.startsWith('@')) {
         setRunning(false)
@@ -167,15 +174,22 @@ export default function Workspace({ team }) {
             </div>
           )
         })}
-        {running && (
-          <div className="ws-msg" style={{borderLeft:'3px solid #7c3aed'}}>
-            <div className="ws-msg-header">
-              <YujinAvatar size={32} />
-              <span className="ws-sender" style={{color:'#7c3aed'}}>Yujin</span>
+        {(running || typingInfo) && (() => {
+          const who = typingInfo || { sender: 'Yujin', senderType: 'yujin' }
+          const isYujin = who.senderType === 'yujin'
+          const color = !isYujin ? getWorkerColor(who.sender, workerNames) : null
+          const borderColor = isYujin ? '#7c3aed' : color.border
+          const senderColor = isYujin ? '#7c3aed' : color.text
+          return (
+            <div className="ws-msg" style={{borderLeft: `3px solid ${borderColor}`}}>
+              <div className="ws-msg-header">
+                <Avatar sender={who.sender} senderType={who.senderType} workerNames={workerNames} />
+                <span className="ws-sender" style={{color:senderColor}}>{who.sender}</span>
+              </div>
+              <div className="bubble typing"><span/><span/><span/></div>
             </div>
-            <div className="bubble typing"><span/><span/><span/></div>
-          </div>
-        )}
+          )
+        })()}
         <div ref={bottomRef} />
       </div>
 

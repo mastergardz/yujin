@@ -77,6 +77,14 @@ async def run_team_task(task: str, team_id, db: AsyncSession, broadcast_fn=None)
                 "created_at": msg.created_at.isoformat()
             })
 
+    async def broadcast_typing(sender, sender_type):
+        if broadcast_fn:
+            await broadcast_fn({
+                "type": "typing",
+                "sender": sender,
+                "sender_type": sender_type
+            })
+
     workers_info = "\n".join([f"- {w.name}: {w.role}" for w in workers])
     plan_prompt = f"""งานที่ได้รับ: {task}
 
@@ -113,6 +121,7 @@ async def run_team_task(task: str, team_id, db: AsyncSession, broadcast_fn=None)
             continue
 
         await broadcast("Yujin", "yujin", f"@{worker_name} — {worker_task}")
+        await broadcast_typing(worker_name, "worker")
 
         worker_prompt = f"""บทบาทของคุณ: {worker.role}
 งานที่ได้รับ: {worker_task}
@@ -143,6 +152,7 @@ async def run_team_task(task: str, team_id, db: AsyncSession, broadcast_fn=None)
 ถ้าทีมเขียนบทความมา ให้คัดเอาบทความที่ดีที่สุดมาส่งเลย ไม่ต้องสรุปว่าใครทำอะไร
 เน้นส่งเนื้อหาจริงๆ ที่พี่ใช้งานได้เลย"""
 
+        await broadcast_typing("Yujin", "yujin")
         final, usage = await call_llm_with_usage(
             summary_prompt,
             "คุณคือ Yujin เลขา AI ผู้หญิง เรียกตัวเองว่าหนู เรียกผู้ใช้ว่าพี่ ใช้คำลงท้าย คะ ค่ะ ขา ค่า ห้ามเป็นทางการ ห้ามขึ้นต้นว่าเรียน ห้ามเรียกผู้ใช้ว่า CEO หรือผู้บริหาร ส่งงานแบบเพื่อนร่วมงานสนิท",
