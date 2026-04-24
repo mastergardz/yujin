@@ -72,14 +72,28 @@ function Avatar({ sender, senderType, workerNames }) {
 
 const ACCEPT = "image/jpeg,image/png,image/gif,image/webp,application/pdf,text/plain,text/csv,text/markdown,application/json"
 
-export default function Workspace({ team }) {
+const ALL_MODELS = [
+  { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', type: 'text' },
+  { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro', type: 'text' },
+  { id: 'gemini-2.5-flash-8b', label: 'Gemini 2.5 Flash-8B', type: 'text' },
+  { id: 'meta-llama/Llama-3.3-70B-Instruct-Turbo', label: 'Llama 3.3 70B', type: 'text' },
+  { id: 'meta-llama/Llama-4-Scout-17B-16E-Instruct', label: 'Llama 4 Scout', type: 'text' },
+  { id: 'meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo', label: 'Llama 3.1 8B', type: 'text' },
+  { id: 'gemini-2.5-flash-image', label: '🎨 Gemini 2.5 Flash Image', type: 'image' },
+  { id: 'gemini-3.1-flash-image-preview', label: '🎨 Nano Banana 2', type: 'image' },
+  { id: 'gemini-3-pro-image-preview', label: '🎨 Nano Banana Pro', type: 'image' },
+]
+
+export default function Workspace({ team: initialTeam, onTeamUpdated }) {
+  const [team, setTeam] = useState(initialTeam)
   const [messages, setMessages] = useState([])
   const [task, setTask] = useState('')
   const [connected, setConnected] = useState(false)
   const [running, setRunning] = useState(false)
-  const [sending, setSending] = useState(false) // analyzing on send
+  const [sending, setSending] = useState(false)
   const [typingInfo, setTypingInfo] = useState(null)
-  const [pendingFile, setPendingFile] = useState(null) // { file, filename, preview } — รอส่ง
+  const [pendingFile, setPendingFile] = useState(null)
+  const [editingWorker, setEditingWorker] = useState(null) // worker id ที่กำลัง edit model
   const wsRef = useRef(null)
   const bottomRef = useRef(null)
   const reconnectTimer = useRef(null)
@@ -87,6 +101,30 @@ export default function Workspace({ team }) {
   const pendingImageRef = useRef(null)
 
   const workerNames = team.workers.map(w => w.name)
+
+  useEffect(() => {
+    if (!editingWorker) return
+    const close = () => setEditingWorker(null)
+    document.addEventListener('click', close)
+    return () => document.removeEventListener('click', close)
+  }, [editingWorker])
+
+  const updateWorkerModel = async (workerId, newModel) => {
+    const res = await fetch(`/api/teams/workers/${workerId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ llm_model: newModel })
+    })
+    if (res.ok) {
+      const updated = await res.json()
+      setTeam(prev => ({
+        ...prev,
+        workers: prev.workers.map(w => w.id === workerId ? { ...w, llm_model: updated.llm_model } : w)
+      }))
+      if (onTeamUpdated) onTeamUpdated()
+    }
+    setEditingWorker(null)
+  }
 
   const connect = () => {
     if (wsRef.current) { wsRef.current.onclose = null; wsRef.current.close() }
@@ -187,14 +225,56 @@ export default function Workspace({ team }) {
             {team.workers.map(w => {
               const color = getWorkerColor(w.name, workerNames)
               const modelLabel = MODEL_SHORT[w.llm_model] || w.llm_model || ''
+              const isEditing = editingWorker === w.id
               return (
-                <span key={w.id} className="worker-chip" style={{background:color.bg,color:color.text,border:`1px solid ${color.border}`}}>
+                <span key={w.id} className="worker-chip" style={{background:color.bg,color:color.text,border:`1px solid ${color.border}`,position:'relative'}}>
                   <span>{w.name} — {w.role}</span>
-                  {modelLabel && <span style={{display:'block',fontSize:'0.65rem',opacity:0.7,marginTop:'1px',fontWeight:400}}>{modelLabel}</span>}
+                  {modelLabel && (
+                    <span
+                      onClick={() => setEditingWorker(isEditing ? null : w.id)}
+                      style={{display:'block',fontSize:'0.65rem',opacity:0.7,marginTop:'1px',fontWeight:400,cursor:'pointer',textDecoration:'underline dotted',userSelect:'none'}}
+                      title="คลิกเพื่อเปลี่ยน model"
+                    >
+                      {modelLabel} ✏️
+                    </span>
+                  )}
                   {(w.capabilities || []).length > 0 && (
                     <span style={{display:'block',fontSize:'0.6rem',opacity:0.65,marginTop:'2px'}}>
                       {(w.capabilities || []).map(c => ({'shell_tool':'💻','db_tool':'🗄️','file_tool':'📄','image_tool':'🎨'}[c] || '🔧')).join(' ')}
                     </span>
+                  )}
+                  {isEditing && (
+                    <div style={{
+                      position:'absolute', top:'100%', left:0, zIndex:100,
+                      background:'white', border:'1px solid #e5e5ea', borderRadius:'8px',
+                      boxShadow:'0 4px 16px rgba(0,0,0,0.12)', minWidth:'200px', padding:'4px 0',
+                    }}
+                      onClick={e => e.stopPropagation()}
+                    >
+                      {['text','image'].map(type => (
+                        <div key={type}>
+                          <div style={{fontSize:'0.65rem',color:'#999',padding:'4px 10px 2px',fontWeight:600,textTransform:'uppercase'}}>
+                            {type === 'text' ? '🧠 Text' : '🎨 Image'}
+                          </div>
+                          {ALL_MODELS.filter(m => m.type === type).map(m => (
+                            <div
+                              key={m.id}
+                              onClick={() => updateWorkerModel(w.id, m.id)}
+                              style={{
+                                padding:'5px 10px', fontSize:'0.78rem', cursor:'pointer',
+                                background: w.llm_model === m.id ? '#f3e8ff' : 'transparent',
+                                color: w.llm_model === m.id ? '#7c3aed' : '#333',
+                                fontWeight: w.llm_model === m.id ? 600 : 400,
+                              }}
+                              onMouseEnter={e => { if (w.llm_model !== m.id) e.target.style.background='#f9fafb' }}
+                              onMouseLeave={e => { if (w.llm_model !== m.id) e.target.style.background='transparent' }}
+                            >
+                              {w.llm_model === m.id ? '✓ ' : ''}{m.label}
+                            </div>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </span>
               )

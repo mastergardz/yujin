@@ -92,3 +92,26 @@ async def delete_team(team_id: str, db: AsyncSession = Depends(get_db)):
     await db.delete(team)
     await db.commit()
     return {"success": True}
+
+class WorkerUpdate(BaseModel):
+    llm_model: Optional[str] = None
+    capabilities: Optional[List[str]] = None
+
+@router.patch("/workers/{worker_id}")
+async def update_worker(worker_id: str, data: WorkerUpdate, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Worker).where(Worker.id == uuid.UUID(worker_id)))
+    worker = result.scalar_one_or_none()
+    if not worker:
+        raise HTTPException(status_code=404, detail="Worker not found")
+    if data.llm_model is not None:
+        worker.llm_model = normalize_model_id(data.llm_model)
+    if data.capabilities is not None:
+        worker.capabilities = [c for c in data.capabilities if c in VALID_TOOLS]
+    await db.commit()
+    return {
+        "success": True,
+        "id": str(worker.id),
+        "name": worker.name,
+        "llm_model": worker.llm_model,
+        "capabilities": worker.capabilities or [],
+    }
