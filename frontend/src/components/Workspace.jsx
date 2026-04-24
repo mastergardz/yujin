@@ -168,15 +168,16 @@ export default function Workspace({ team: initialTeam, onTeamUpdated }) {
   }
 
   const decideRecruit = async (approved) => {
+    const snapshot = recruitRequest
+    setRecruitRequest(null)
     const body = approved
-      ? { approved: true, worker: recruitRequest }
+      ? { approved: true, worker: snapshot }
       : { approved: false }
     await fetch(`/api/workspace/${team.id}/recruit`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     })
-    setRecruitRequest(null)
   }
 
   const connect = () => {
@@ -200,7 +201,7 @@ export default function Workspace({ team: initialTeam, onTeamUpdated }) {
         return
       }
       if (data.type === 'team_updated') {
-        // reload team workers จาก server
+        setRecruitRequest(null)
         fetch(`/api/teams/`).then(r => r.json()).then(teams => {
           const updated = teams.find(t => t.id === team.id)
           if (updated) {
