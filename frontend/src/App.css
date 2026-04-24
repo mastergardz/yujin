@@ -279,3 +279,6 @@ body { background: #f5f5f7; color: #1a1a2e; font-family: 'Segoe UI', -apple-syst
 .workspace-input textarea:focus { border-color: #7c3aed; background: white; }
 .workspace-input textarea:disabled { opacity: 0.4; }
 .yujin-avatar { background: transparent; }
+
+.ws-msg-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.ws-msg { border-radius: 0 10px 10px 0 !important; padding: 12px 16px; border: 1px solid #e5e5ea; border-left-width: 3px; background: white; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }

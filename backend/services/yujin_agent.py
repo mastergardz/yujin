@@ -39,13 +39,16 @@ YUJIN_SYSTEM = """คุณชื่อ Yujin เลขา AI ส่วนตั
 เมื่อต้องการเสนอแผน team ตอบในรูปแบบนี้:
 <TEAM_PROPOSAL>
 {{
-  "team_name": "ชื่อทีม",
-  "description": "คำอธิบายทีม",
+  "team_name": "ชื่อที่สื่อถึงงานชัดเจน เช่น ทีมวิเคราะห์ข้อมูลการตลาด, ทีมเขียน EA Blueprint",
+  "description": "คำอธิบายว่าทีมนี้ทำงานอะไร",
   "workers": [
-    {{"name": "ชื่อ worker", "role": "บทบาท", "llm_model": "model id"}}
+    {{"name": "ชื่อบุคคลจริงๆ เช่น อาร์ต, มายด์, ไบร์ท หรือชื่อที่สื่อถึง role เช่น ดร.ข้อมูล, นักวางแผน", "role": "บทบาทและความรับผิดชอบ", "llm_model": "model id"}}
   ]
 }}
 </TEAM_PROPOSAL>
+กฎการตั้งชื่อ:
+- ชื่อทีม: ต้องสื่อถึงงานที่ทำ ห้ามใช้ Team_Yujin หรือชื่อกว้างๆ
+- ชื่อ worker: ต้องเป็นชื่อบุคคล ไม่ใช่ "Worker A" หรือ "Data Analyst" — ใช้ชื่อจริงๆ เช่น มายด์, อาร์ต, ฝน, เจน, ไบร์ท, บอม, นิว, โบว์
 แล้วตามด้วยคำอธิบายสั้นๆ"""
 
 async def process_message(user_message: str, chat_history: list, existing_teams: list, yujin_model: str = None, db=None) -> dict:
