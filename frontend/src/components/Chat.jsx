@@ -199,9 +199,6 @@ export default function Chat() {
               {m.role === 'yujin' && <YujinAvatar />}
               <div className="msg-body">
                 <div className="bubble">{m.content}</div>
-                {m.role === 'yujin' && m.model_used && (
-                  <div className="model-badge">{modelShort(m.model_used)}</div>
-                )}
                 {m.proposal && !m.approved && (
                   <div className="proposal-card">
                     <div className="proposal-title">📋 เสนอทีม: {m.proposal.team_name}</div>
@@ -220,7 +217,7 @@ export default function Chat() {
                 )}
                 {m.approved && <div className="approved-badge">✅ สร้างทีมแล้ว</div>}
               </div>
-              {m.role === 'user' && <div className="avatar user-avatar">P</div>}
+              {m.role === "user" && <div className="avatar user-avatar">พี่การ์ด</div>}
             </div>
           ))}
           {pending && (

@@ -1,5 +1,5 @@
 import json
-from services.llm import call_llm
+from services.llm import call_llm_with_usage
 from models.models import WorkspaceMessage, Worker, Team
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -11,11 +11,53 @@ async def save_ws_msg(db: AsyncSession, team_id, sender: str, sender_type: str, 
     await db.commit()
     return msg
 
+def format_cost_summary(usage_list: list) -> str:
+    """สร้าง cost summary จาก usage records"""
+    if not usage_list:
+        return ""
+    
+    total_input = sum(u["input_tokens"] for u in usage_list)
+    total_output = sum(u["output_tokens"] for u in usage_list)
+    total_cost = sum(u["cost_usd"] for u in usage_list)
+    
+    # จัดกลุ่มตาม model
+    by_model = {}
+    for u in usage_list:
+        m = u["model"]
+        if m not in by_model:
+            by_model[m] = {"input": 0, "output": 0, "cost": 0, "calls": 0}
+        by_model[m]["input"] += u["input_tokens"]
+        by_model[m]["output"] += u["output_tokens"]
+        by_model[m]["cost"] += u["cost_usd"]
+        by_model[m]["calls"] += 1
+    
+    # ย่อชื่อ model
+    MODEL_SHORT = {
+        "gemini-2.5-flash": "Gemini 2.5 Flash",
+        "gemini-2.5-pro": "Gemini 2.5 Pro",
+        "gemini-2.0-flash-lite": "Gemini 2.0 Lite",
+        "meta-llama/Llama-3.3-70B-Instruct-Turbo": "Llama 3.3 70B",
+        "meta-llama/Llama-4-Scout-17B-16E-Instruct": "Llama 4 Scout",
+        "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo": "Llama 3.1 8B",
+    }
+    
+    lines = ["---", "💰 **ค่าใช้จ่าย API งานนี้**"]
+    for model_id, data in by_model.items():
+        name = MODEL_SHORT.get(model_id, model_id.split("/")[-1])
+        cost_thb = data["cost"] * 35  # USD to THB approx
+        lines.append(f"• {name}: {data['input']:,}+{data['output']:,} tokens = ${data['cost']:.5f} (~฿{cost_thb:.3f})")
+    
+    total_thb = total_cost * 35
+    lines.append(f"**รวม: ${total_cost:.5f} (~฿{total_thb:.3f})** | {total_input+total_output:,} tokens")
+    
+    return "\n".join(lines)
+
 async def run_team_task(task: str, team_id, db: AsyncSession, broadcast_fn=None):
     """Yujin สั่งงาน workers แล้ว broadcast ผ่าน websocket"""
     import uuid
 
-    # ดึง team + workers
+    usage_log = []  # track all API calls
+
     team_result = await db.execute(select(Team).where(Team.id == uuid.UUID(str(team_id))))
     team = team_result.scalar_one_or_none()
     if not team:
@@ -35,7 +77,6 @@ async def run_team_task(task: str, team_id, db: AsyncSession, broadcast_fn=None)
                 "created_at": msg.created_at.isoformat()
             })
 
-    # Yujin วิเคราะห์งานและแบ่ง subtasks ให้ workers
     workers_info = "\n".join([f"- {w.name}: {w.role}" for w in workers])
     plan_prompt = f"""งานที่ได้รับ: {task}
 
@@ -50,7 +91,9 @@ async def run_team_task(task: str, team_id, db: AsyncSession, broadcast_fn=None)
   ]
 }}"""
 
-    plan_text = await call_llm(plan_prompt, "คุณคือ Yujin เลขา AI ผู้หญิง กำลังมอบหมายงานให้ทีม เรียกชื่อ worker โดยตรง ตอบเป็น JSON เท่านั้น", db=db)
+    plan_text, usage = await call_llm_with_usage(plan_prompt, "คุณคือ Yujin เลขา AI ผู้หญิง กำลังมอบหมายงานให้ทีม เรียกชื่อ worker โดยตรง ตอบเป็น JSON เท่านั้น", db=db)
+    usage_log.append(usage)
+
     try:
         start = plan_text.index("{")
         end = plan_text.rindex("}") + 1
@@ -60,13 +103,11 @@ async def run_team_task(task: str, team_id, db: AsyncSession, broadcast_fn=None)
 
     await broadcast("Yujin", "yujin", f"รับงานแล้วค่ะ — {plan.get('summary', task)}\n\nกำลังมอบหมายงานให้ทีม...")
 
-    # แต่ละ worker รับงานและทำ
     results = []
     for assignment in plan.get("assignments", []):
         worker_name = assignment["worker"]
         worker_task = assignment["task"]
 
-        # หา worker object
         worker = next((w for w in workers if w.name == worker_name), workers[0] if workers else None)
         if not worker:
             continue
@@ -82,11 +123,15 @@ async def run_team_task(task: str, team_id, db: AsyncSession, broadcast_fn=None)
 ถ้างานคือวิจัย → ส่งข้อมูลที่ค้นพบมาเลย
 ถ้างานคือออกแบบ → ส่งผลงานที่ออกแบบมาเลย"""
 
-        worker_result = await call_llm(worker_prompt, f"คุณชื่อ {worker_name} เป็นผู้หญิง ทำหน้าที่ {worker.role} บุคลิก: สุภาพ ฉลาด ทำงานเป็น เรียกตัวเองว่าหนู เรียก worker คนอื่นด้วยชื่อ ใช้คำลงท้าย คะ ค่ะ ขา ค่า จ๊ะ ส่งผลงานจริงๆ ไม่ใช่อธิบายว่าจะทำอะไร", model=worker.llm_model, db=db)
+        worker_result, usage = await call_llm_with_usage(
+            worker_prompt,
+            f"คุณชื่อ {worker_name} เป็นผู้หญิง ทำหน้าที่ {worker.role} บุคลิก: สุภาพ ฉลาด ทำงานเป็น เรียกตัวเองว่าหนู ใช้คำลงท้าย คะ ค่ะ ขา ค่า จ๊ะ ส่งผลงานจริงๆ ไม่ใช่อธิบายว่าจะทำอะไร",
+            model=worker.llm_model, db=db
+        )
+        usage_log.append(usage)
         await broadcast(worker_name, "worker", worker_result)
         results.append({"worker": worker_name, "result": worker_result})
 
-    # Yujin ส่งงานให้พี่
     if results:
         summary_parts = "\n\n".join([f"**{r['worker']}:** {r['result']}" for r in results])
         summary_prompt = f"""งานต้นฉบับที่พี่สั่ง: {task}
@@ -98,8 +143,20 @@ async def run_team_task(task: str, team_id, db: AsyncSession, broadcast_fn=None)
 ถ้าทีมเขียนบทความมา ให้คัดเอาบทความที่ดีที่สุดมาส่งเลย ไม่ต้องสรุปว่าใครทำอะไร
 เน้นส่งเนื้อหาจริงๆ ที่พี่ใช้งานได้เลย"""
 
-        final = await call_llm(summary_prompt, "คุณคือ Yujin เลขา AI ผู้หญิง เรียกตัวเองว่าหนู เรียกผู้ใช้ว่าพี่ ใช้คำลงท้าย คะ ค่ะ ขา ค่า ห้ามเป็นทางการ ห้ามขึ้นต้นว่าเรียน ห้ามเรียกผู้ใช้ว่า CEO หรือผู้บริหาร ส่งงานแบบเพื่อนร่วมงานสนิท", db=db)
+        final, usage = await call_llm_with_usage(
+            summary_prompt,
+            "คุณคือ Yujin เลขา AI ผู้หญิง เรียกตัวเองว่าหนู เรียกผู้ใช้ว่าพี่ ใช้คำลงท้าย คะ ค่ะ ขา ค่า ห้ามเป็นทางการ ห้ามขึ้นต้นว่าเรียน ห้ามเรียกผู้ใช้ว่า CEO หรือผู้บริหาร ส่งงานแบบเพื่อนร่วมงานสนิท",
+            db=db
+        )
+        usage_log.append(usage)
+
         await broadcast("Yujin", "yujin", final)
+
+        # Cost summary
+        cost_msg = format_cost_summary(usage_log)
+        if cost_msg:
+            await broadcast("Yujin", "yujin", cost_msg)
+
         return final
 
     return "ทำงานเสร็จแล้วค่ะ"

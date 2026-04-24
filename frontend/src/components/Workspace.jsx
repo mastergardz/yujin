@@ -10,6 +10,15 @@ const WORKER_COLORS = [
   { bg: '#f0fdfa', border: '#99f6e4', text: '#0f766e' },
 ]
 
+const MODEL_SHORT = {
+  'gemini-2.5-flash': 'Gemini 2.5 Flash',
+  'gemini-2.5-pro': 'Gemini 2.5 Pro',
+  'gemini-2.0-flash-lite': 'Gemini 2.0 Lite',
+  'meta-llama/Llama-3.3-70B-Instruct-Turbo': 'Llama 3.3 70B',
+  'meta-llama/Llama-4-Scout-17B-16E-Instruct': 'Llama 4 Scout',
+  'meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo': 'Llama 3.1 8B',
+}
+
 function getWorkerColor(name, workerNames) {
   const idx = workerNames.indexOf(name)
   return WORKER_COLORS[idx % WORKER_COLORS.length]
@@ -17,6 +26,14 @@ function getWorkerColor(name, workerNames) {
 
 function Avatar({ sender, senderType, workerNames }) {
   if (senderType === 'yujin') return <YujinAvatar size={32} />
+  if (senderType === 'user') return (
+    <div style={{
+      width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
+      background: '#fef3c7', border: '1.5px solid #fcd34d',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      fontSize: '0.75rem', fontWeight: 700, color: '#92400e'
+    }}>พี่</div>
+  )
   const color = getWorkerColor(sender, workerNames)
   return (
     <div style={{
@@ -53,7 +70,10 @@ export default function Workspace({ team }) {
     ws.onmessage = (e) => {
       const data = JSON.parse(e.data)
       setMessages(prev => [...prev, data])
-      if (data.sender === 'Yujin' && data.content.startsWith('📋')) setRunning(false)
+      if (data.sender_type === 'yujin' && data.sender === 'Yujin' && !data.content.includes('รับงานแล้ว') && !data.content.startsWith('@')) {
+        // last yujin message that's not a task assignment = done
+        setRunning(false)
+      }
     }
     wsRef.current = ws
   }
@@ -86,14 +106,21 @@ export default function Workspace({ team }) {
         <div>
           <div className="workspace-title">👥 {team.name}</div>
           <div className="workspace-workers">
-            {team.workers.map((w, i) => {
+            {team.workers.map((w) => {
               const color = getWorkerColor(w.name, workerNames)
+              const modelLabel = MODEL_SHORT[w.llm_model] || w.llm_model || ''
               return (
                 <span key={w.id} className="worker-chip" style={{
                   background: color.bg, color: color.text,
                   border: `1px solid ${color.border}`
                 }}>
-                  {w.name} — {w.role}
+                  <span>{w.name} — {w.role}</span>
+                  {modelLabel && (
+                    <span style={{
+                      display: 'block', fontSize: '0.65rem', opacity: 0.7,
+                      marginTop: '1px', fontWeight: 400
+                    }}>{modelLabel}</span>
+                  )}
                 </span>
               )
             })}
@@ -108,21 +135,20 @@ export default function Workspace({ team }) {
         {messages.length === 0 && (
           <div className="empty-chat" style={{marginTop: '40px'}}>
             <div className="empty-icon">👥</div>
-            <div>ส่งงานให้ทีมได้เลยค่ะ<br/>Yujin จะมอบหมายงานให้แต่ละคนในทีม</div>
+            <div>สั่งงานทีมได้เลยค่ะ พี่<br/>Yujin จะมอบหมายงานให้แต่ละคน</div>
           </div>
         )}
         {messages.map((m, i) => {
           const isYujin = m.sender_type === 'yujin'
-          const color = isYujin ? null : getWorkerColor(m.sender, workerNames)
+          const isUser = m.sender_type === 'user'
+          const color = (!isYujin && !isUser) ? getWorkerColor(m.sender, workerNames) : null
+          const borderColor = isYujin ? '#7c3aed' : isUser ? '#fcd34d' : color.border
+          const senderColor = isYujin ? '#7c3aed' : isUser ? '#92400e' : color.text
           return (
-            <div key={i} className="ws-msg" style={{
-              borderLeft: isYujin ? '3px solid #7c3aed' : `3px solid ${color.border}`
-            }}>
+            <div key={i} className="ws-msg" style={{ borderLeft: `3px solid ${borderColor}` }}>
               <div className="ws-msg-header">
                 <Avatar sender={m.sender} senderType={m.sender_type} workerNames={workerNames} />
-                <span className="ws-sender" style={{color: isYujin ? '#7c3aed' : color.text}}>
-                  {m.sender}
-                </span>
+                <span className="ws-sender" style={{ color: senderColor }}>{m.sender}</span>
                 <span className="ws-time">{new Date(m.created_at).toLocaleTimeString('th-TH')}</span>
               </div>
               <div className="ws-content">{m.content}</div>

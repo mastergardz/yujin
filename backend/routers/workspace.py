@@ -6,10 +6,10 @@ from models.models import WorkspaceMessage, Team, Worker
 from services.team_executor import run_team_task
 from pydantic import BaseModel
 import json, uuid, asyncio
+from datetime import datetime, timezone
 
 router = APIRouter(prefix="/api/workspace", tags=["workspace"])
 
-# Active connections per team
 connections: dict[str, list[WebSocket]] = {}
 
 class RunTask(BaseModel):
@@ -49,6 +49,23 @@ async def workspace_ws(websocket: WebSocket, team_id: str, db: AsyncSession = De
                         dead.append(ws)
                 for ws in dead:
                     connections[team_id].remove(ws)
+
+            # Save & broadcast user message first
+            user_msg = WorkspaceMessage(
+                team_id=uuid.UUID(team_id),
+                sender="พี่การ์ด",
+                sender_type="user",
+                content=task
+            )
+            db.add(user_msg)
+            await db.commit()
+            await broadcast({
+                "id": str(user_msg.id),
+                "sender": "พี่การ์ด",
+                "sender_type": "user",
+                "content": task,
+                "created_at": user_msg.created_at.isoformat()
+            })
 
             await run_team_task(task, uuid.UUID(team_id), db, broadcast)
 
