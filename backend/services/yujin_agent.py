@@ -48,7 +48,7 @@ YUJIN_SYSTEM = """คุณชื่อ Yujin เลขา AI ส่วนตั
 </TEAM_PROPOSAL>
 กฎการตั้งชื่อ:
 - ชื่อทีม: ต้องสื่อถึงงานที่ทำ ห้ามใช้ Team_Yujin หรือชื่อกว้างๆ
-- ชื่อ worker: ต้องเป็นชื่อบุคคล ไม่ใช่ "Worker A" หรือ "Data Analyst" — ใช้ชื่อจริงๆ เช่น มายด์, อาร์ต, ฝน, เจน, ไบร์ท, บอม, นิว, โบว์
+- ชื่อ worker: ต้องเป็นชื่อผู้หญิงไทย เช่น มายด์, ฝน, เจน, โบว์, นิว, แพร, มิ้นท์, พลอย, ออม, เฟิร์น, ปิ่น, ขิม
 แล้วตามด้วยคำอธิบายสั้นๆ"""
 
 async def process_message(user_message: str, chat_history: list, existing_teams: list, yujin_model: str = None, db=None) -> dict:

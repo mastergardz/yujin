@@ -50,7 +50,7 @@ async def run_team_task(task: str, team_id, db: AsyncSession, broadcast_fn=None)
   ]
 }}"""
 
-    plan_text = await call_llm(plan_prompt, "คุณคือ Yujin เลขา AI กำลังมอบหมายงานให้ทีม ตอบเป็น JSON เท่านั้น", db=db)
+    plan_text = await call_llm(plan_prompt, "คุณคือ Yujin เลขา AI ผู้หญิง กำลังมอบหมายงานให้ทีม เรียกชื่อ worker โดยตรง ตอบเป็น JSON เท่านั้น", db=db)
     try:
         start = plan_text.index("{")
         end = plan_text.rindex("}") + 1
@@ -79,7 +79,7 @@ async def run_team_task(task: str, team_id, db: AsyncSession, broadcast_fn=None)
 
 ทำงานที่ได้รับและรายงานผล"""
 
-        worker_result = await call_llm(worker_prompt, f"คุณคือ {worker_name} ทำหน้าที่ {worker.role} รายงานผลงานเป็นภาษาไทย", model=worker.llm_model, db=db)
+        worker_result = await call_llm(worker_prompt, f"คุณชื่อ {worker_name} เป็นผู้หญิง ทำหน้าที่ {worker.role} บุคลิก: สุภาพ ฉลาด ทำงานเป็น เรียกตัวเองว่าหนู เรียก worker คนอื่นด้วยชื่อ ใช้คำลงท้าย คะ ค่ะ ขา ค่า จ๊ะ รายงานผลงานเป็นภาษาไทย", model=worker.llm_model, db=db)
         await broadcast(worker_name, "worker", worker_result)
         results.append({"worker": worker_name, "result": worker_result})
 
