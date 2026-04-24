@@ -30,10 +30,13 @@ class Worker(Base):
 class ChatMessage(Base):
     __tablename__ = "yujin_chat_messages"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    room_id = Column(UUID(as_uuid=True), ForeignKey("yujin_rooms.id", ondelete="CASCADE"), nullable=True)
     role = Column(String(20), nullable=False)
     content = Column(Text, nullable=False)
+    model_used = Column(String(100), nullable=True)
     extra_data = Column(JSON, default={})
     created_at = Column(DateTime, default=datetime.utcnow)
+    room = relationship("Room", back_populates="messages")
 
 class YujinConfig(Base):
     __tablename__ = "yujin_config"
@@ -42,3 +45,9 @@ class YujinConfig(Base):
     api_key = Column(String(200), nullable=True)
     deepinfra_api_key = Column(String(200), nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+class Room(Base):
+    __tablename__ = "yujin_rooms"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String(100), nullable=False, default="ห้องใหม่")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    messages = relationship("ChatMessage", back_populates="room", cascade="all, delete-orphan")

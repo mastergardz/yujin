@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from core.database import init_db
-from routers import chat, teams, config
+from routers import chat, teams, config, rooms
 
 app = FastAPI(title="Yujin AI Secretary")
 
@@ -16,6 +16,7 @@ app.add_middleware(
 app.include_router(chat.router)
 app.include_router(teams.router)
 app.include_router(config.router)
+app.include_router(rooms.router)
 
 @app.on_event("startup")
 async def startup():

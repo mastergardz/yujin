@@ -9,16 +9,27 @@ export default function App() {
 
   return (
     <div className="app">
-      <header className="header">
-        <h1>🤖 Yujin</h1>
-        <p>AI Secretary</p>
-        <nav>
-          <button className={tab === 'chat' ? 'active' : ''} onClick={() => setTab('chat')}>Chat</button>
-          <button className={tab === 'teams' ? 'active' : ''} onClick={() => setTab('teams')}>Teams</button>
-          <button className={tab === 'settings' ? 'active' : ''} onClick={() => setTab('settings')}>Settings</button>
+      <aside className="sidebar">
+        <div className="sidebar-logo">
+          <span className="logo-icon">🤖</span>
+          <div>
+            <div className="logo-name">Yujin</div>
+            <div className="logo-sub">AI Secretary</div>
+          </div>
+        </div>
+        <nav className="sidebar-nav">
+          <button className={tab === 'chat' ? 'active' : ''} onClick={() => setTab('chat')}>
+            <span>💬</span> Chat
+          </button>
+          <button className={tab === 'teams' ? 'active' : ''} onClick={() => setTab('teams')}>
+            <span>👥</span> Teams
+          </button>
+          <button className={tab === 'settings' ? 'active' : ''} onClick={() => setTab('settings')}>
+            <span>⚙️</span> Settings
+          </button>
         </nav>
-      </header>
-      <main>
+      </aside>
+      <main className="main-content">
         {tab === 'chat' && <Chat />}
         {tab === 'teams' && <Teams />}
         {tab === 'settings' && <Settings />}
