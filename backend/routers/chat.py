@@ -30,10 +30,22 @@ async def websocket_chat(websocket: WebSocket, room_id: str, db: AsyncSession = 
             payload = json.loads(data)
             user_msg = payload.get("message", "")
 
+            # save user message
             user_record = ChatMessage(role="user", content=user_msg, room_id=uuid.UUID(room_id))
             db.add(user_record)
             await db.commit()
 
+            # ดึง chat history ของห้องนี้ (ล่าสุด 20 ข้อความ)
+            history_result = await db.execute(
+                select(ChatMessage)
+                .where(ChatMessage.room_id == uuid.UUID(room_id))
+                .order_by(ChatMessage.created_at.desc())
+                .limit(20)
+            )
+            history = list(reversed(history_result.scalars().all()))
+            chat_history = [{"role": m.role, "content": m.content} for m in history]
+
+            # existing teams
             teams_result = await db.execute(select(Team).where(Team.status == "active"))
             teams = teams_result.scalars().all()
             teams_data = []
@@ -49,7 +61,7 @@ async def websocket_chat(websocket: WebSocket, room_id: str, db: AsyncSession = 
             config = config_result.scalar_one_or_none()
             yujin_model = config.llm_model if config else settings.yujin_llm_model
 
-            result = await process_message(user_msg, teams_data, yujin_model, db)
+            result = await process_message(user_msg, chat_history, teams_data, yujin_model, db)
 
             yujin_record = ChatMessage(
                 role="yujin", content=result["text"],
