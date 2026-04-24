@@ -141,7 +141,7 @@ export default function Chat() {
     if (!m) return ''
     if (m.includes('gemini-2.5-pro')) return 'Gemini 2.5 Pro'
     if (m.includes('gemini-2.5-flash')) return 'Gemini 2.5 Flash'
-    if (m.includes('gemini-2.0')) return 'Gemini 2.0 Flash Lite'
+    if (m.includes('gemini-2.5-flash-8b')) return 'Gemini 2.5 Flash-8B'
     if (m.includes('Llama-3.3-70B')) return 'Llama 3.3 70B'
     if (m.includes('Llama-4-Scout')) return 'Llama 4 Scout'
     if (m.includes('Llama-3.1-8B')) return 'Llama 3.1 8B'
