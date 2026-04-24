@@ -404,6 +404,17 @@ async def run_team_task(task: str, team_id, db: AsyncSession, broadcast_fn=None)
         results.append({"worker": worker_name, "result": worker_result})
 
     if results:
+        # ถ้าผลงานทั้งหมดเป็นรูปภาพ ไม่ต้อง Yujin summary ซ้ำ
+        all_images = all(
+            "![" in r["result"] or "/api/files/download/" in r["result"]
+            for r in results
+        )
+        if all_images:
+            cost_msg = format_cost_summary(usage_log)
+            if cost_msg:
+                await broadcast("Yujin", "yujin", cost_msg)
+            return results[0]["result"]
+
         summary_parts = "\n\n".join([f"**{r['worker']}:** {r['result']}" for r in results])
         summary_prompt = f"""งานต้นฉบับที่พี่สั่ง: {task}
 
