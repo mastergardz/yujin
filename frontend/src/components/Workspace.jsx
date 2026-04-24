@@ -84,8 +84,12 @@ function WsContent({ content }) {
 }
 
 function getWorkerColor(name, workerNames) {
-  const idx = workerNames.indexOf(name)
-  return WORKER_COLORS[idx % WORKER_COLORS.length]
+  let idx = workerNames.indexOf(name)
+  if (idx === -1) {
+    // worker not in list yet (e.g. just recruited) — hash name for stable color
+    idx = name.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0)
+  }
+  return WORKER_COLORS[Math.abs(idx) % WORKER_COLORS.length]
 }
 
 function Avatar({ sender, senderType, workerNames }) {
