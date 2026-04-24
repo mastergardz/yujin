@@ -1,11 +1,33 @@
 import json
 import re
+import asyncio
 from services.llm import call_llm_with_usage
 from services.worker_tools import TOOLS, shell_tool, db_tool, file_tool, image_tool
 from models.models import WorkspaceMessage, Worker, Team
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from datetime import datetime
+
+# pending recruit approvals: team_id -> asyncio.Future
+_recruit_pending: dict[str, asyncio.Future] = {}
+
+async def wait_recruit_approval(team_id: str, timeout: float = 120.0) -> dict | None:
+    """รอพี่ approve/decline recruit request, return worker data or None"""
+    loop = asyncio.get_event_loop()
+    fut = loop.create_future()
+    _recruit_pending[str(team_id)] = fut
+    try:
+        return await asyncio.wait_for(asyncio.shield(fut), timeout=timeout)
+    except asyncio.TimeoutError:
+        return None
+    finally:
+        _recruit_pending.pop(str(team_id), None)
+
+def resolve_recruit(team_id: str, worker_data: dict | None):
+    """เรียกจาก router เมื่อพี่ approve หรือ decline"""
+    fut = _recruit_pending.get(str(team_id))
+    if fut and not fut.done():
+        fut.set_result(worker_data)
 
 async def save_ws_msg(db: AsyncSession, team_id, sender: str, sender_type: str, content: str):
     msg = WorkspaceMessage(team_id=team_id, sender=sender, sender_type=sender_type, content=content)
@@ -214,23 +236,41 @@ async def run_team_task(task: str, team_id, db: AsyncSession, broadcast_fn=None)
         f"- {w.name}: {w.role}" + (f" [tools: {', '.join(getattr(w, 'capabilities', None) or [])}]" if getattr(w, 'capabilities', None) else "")
         for w in workers
     ])
+
+    FEMALE_NAMES = ["มายด์", "ฝน", "เจน", "โบว์", "นิว", "แพร", "มิ้นท์", "พลอย", "ออม", "เฟิร์น", "ปิ่น", "ขิม"]
+    used_names = [w.name for w in workers]
+    available_names = [n for n in FEMALE_NAMES if n not in used_names]
+
     plan_prompt = f"""งานที่ได้รับ: {task}
 
-ทีมงาน:
+ทีมงานปัจจุบัน:
 {workers_info}
 
-วิเคราะห์งานและมอบหมาย subtask ให้แต่ละคน ตอบในรูปแบบ JSON:
+วิเคราะห์งานและมอบหมาย subtask ให้แต่ละคน
+ถ้างานต้องการ skill ที่ทีมปัจจุบันไม่มี ให้เสนอ recruit worker เพิ่มได้ 1 คน (ไม่บังคับ)
+
+ตอบในรูปแบบ JSON:
 {{
   "summary": "สรุปแผนงานสั้นๆ",
   "assignments": [
     {{"worker": "ชื่อ worker", "task": "งานที่มอบหมาย"}}
-  ]
-}}"""
+  ],
+  "recruit": {{
+    "needed": true,
+    "name": "ชื่อผู้หญิงไทยจากรายการ: {', '.join(available_names[:5])}",
+    "role": "บทบาทที่ต้องการ",
+    "llm_model": "gemini-2.5-flash",
+    "capabilities": [],
+    "reason": "เหตุผลสั้นๆ ว่าทำไมต้องการ"
+  }}
+}}
+
+หมายเหตุ: ถ้าทีมปัจจุบันทำได้ครบ ให้ "recruit": {{"needed": false}}"""
 
     await broadcast_typing("Yujin", "yujin")
     plan_text, usage = await call_llm_with_usage(
         plan_prompt,
-        "คุณคือ Yujin เลขา AI ผู้หญิง กำลังมอบหมายงานให้ทีม เรียกชื่อ worker โดยตรง ตอบเป็น JSON เท่านั้น",
+        "คุณคือ Yujin เลขา AI ผู้หญิง กำลังวางแผนงาน ตอบเป็น JSON เท่านั้น ห้ามมี text อื่น",
         db=db
     )
     usage_log.append(usage)
@@ -240,9 +280,56 @@ async def run_team_task(task: str, team_id, db: AsyncSession, broadcast_fn=None)
         end = plan_text.rindex("}") + 1
         plan = json.loads(plan_text[start:end])
     except Exception:
-        plan = {"summary": plan_text, "assignments": [{"worker": workers[0].name if workers else "Worker", "task": task}]}
+        plan = {"summary": plan_text, "assignments": [{"worker": workers[0].name if workers else "Worker", "task": task}], "recruit": {"needed": False}}
 
     await broadcast("Yujin", "yujin", f"รับงานแล้วค่ะ — {plan.get('summary', task)}\n\nกำลังมอบหมายงานให้ทีม...")
+
+    # ── Recruit flow ────────────────────────────────────────
+    recruit = plan.get("recruit", {})
+    if recruit.get("needed"):
+        recruit_name = recruit.get("name", "นิว")
+        recruit_role = recruit.get("role", "")
+        recruit_reason = recruit.get("reason", "")
+        recruit_model = recruit.get("llm_model", "gemini-2.5-flash")
+        recruit_caps = recruit.get("capabilities", [])
+
+        await broadcast("Yujin", "yujin",
+            f"⚠️ หนูอยากเพิ่ม **{recruit_name}** เข้าทีมด้วยค่ะ\n"
+            f"บทบาท: {recruit_role}\n"
+            f"เหตุผล: {recruit_reason}"
+        )
+        if broadcast_fn:
+            await broadcast_fn({
+                "type": "recruit_request",
+                "worker": {
+                    "name": recruit_name,
+                    "role": recruit_role,
+                    "llm_model": recruit_model,
+                    "capabilities": recruit_caps,
+                    "reason": recruit_reason,
+                }
+            })
+
+        approved_worker = await wait_recruit_approval(str(team.id))
+        if approved_worker:
+            import uuid as _uuid
+            new_worker = Worker(
+                team_id=team.id,
+                name=approved_worker["name"],
+                role=approved_worker["role"],
+                llm_model=approved_worker["llm_model"],
+                capabilities=approved_worker.get("capabilities", []),
+            )
+            db.add(new_worker)
+            await db.commit()
+            await db.refresh(new_worker)
+            workers = list(workers) + [new_worker]
+            await broadcast("Yujin", "yujin", f"✅ เพิ่ม **{new_worker.name}** เข้าทีมแล้วค่ะ พี่")
+            if broadcast_fn:
+                await broadcast_fn({"type": "team_updated"})
+        else:
+            await broadcast("Yujin", "yujin", "โอเคค่ะ ดำเนินงานกับทีมเดิมนะคะ")
+    # ────────────────────────────────────────────────────────
 
     results = []
     for assignment in plan.get("assignments", []):

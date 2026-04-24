@@ -93,7 +93,8 @@ export default function Workspace({ team: initialTeam, onTeamUpdated }) {
   const [sending, setSending] = useState(false)
   const [typingInfo, setTypingInfo] = useState(null)
   const [pendingFile, setPendingFile] = useState(null)
-  const [editingWorker, setEditingWorker] = useState(null) // worker id ที่กำลัง edit model
+  const [editingWorker, setEditingWorker] = useState(null)
+  const [recruitRequest, setRecruitRequest] = useState(null) // {name, role, llm_model, capabilities, reason}
   const wsRef = useRef(null)
   const bottomRef = useRef(null)
   const reconnectTimer = useRef(null)
@@ -104,9 +105,13 @@ export default function Workspace({ team: initialTeam, onTeamUpdated }) {
 
   useEffect(() => {
     if (!editingWorker) return
-    const close = () => setEditingWorker(null)
-    document.addEventListener('click', close)
-    return () => document.removeEventListener('click', close)
+    const close = (e) => setEditingWorker(null)
+    // setTimeout ให้ event ปัจจุบัน (ที่เปิด dropdown) ผ่านไปก่อน
+    const timer = setTimeout(() => document.addEventListener('click', close), 0)
+    return () => {
+      clearTimeout(timer)
+      document.removeEventListener('click', close)
+    }
   }, [editingWorker])
 
   const updateWorkerModel = async (workerId, newModel) => {
@@ -126,6 +131,18 @@ export default function Workspace({ team: initialTeam, onTeamUpdated }) {
     setEditingWorker(null)
   }
 
+  const decideRecruit = async (approved) => {
+    const body = approved
+      ? { approved: true, worker: recruitRequest }
+      : { approved: false }
+    await fetch(`/api/workspace/${team.id}/recruit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    })
+    setRecruitRequest(null)
+  }
+
   const connect = () => {
     if (wsRef.current) { wsRef.current.onclose = null; wsRef.current.close() }
     const ws = new WebSocket(`ws://${window.location.hostname}:8030/api/workspace/${team.id}/ws`)
@@ -140,6 +157,21 @@ export default function Workspace({ team: initialTeam, onTeamUpdated }) {
       const data = JSON.parse(e.data)
       if (data.type === 'typing') {
         setTypingInfo({ sender: data.sender, senderType: data.sender_type })
+        return
+      }
+      if (data.type === 'recruit_request') {
+        setRecruitRequest(data.worker)
+        return
+      }
+      if (data.type === 'team_updated') {
+        // reload team workers จาก server
+        fetch(`/api/teams/`).then(r => r.json()).then(teams => {
+          const updated = teams.find(t => t.id === team.id)
+          if (updated) {
+            setTeam(updated)
+            if (onTeamUpdated) onTeamUpdated()
+          }
+        })
         return
       }
       setTypingInfo(null)
@@ -217,7 +249,46 @@ export default function Workspace({ team: initialTeam, onTeamUpdated }) {
   const canSend = connected && !running && !sending && (task.trim() || pendingFile)
 
   return (
-    <div className="workspace">
+    <div className="workspace" style={{position:'relative'}}>
+      {recruitRequest && (
+        <div style={{
+          position:'absolute', inset:0, background:'rgba(0,0,0,0.45)',
+          zIndex:200, display:'flex', alignItems:'center', justifyContent:'center'
+        }}>
+          <div style={{
+            background:'white', borderRadius:'16px', padding:'28px 32px',
+            maxWidth:'380px', width:'90%', boxShadow:'0 8px 32px rgba(0,0,0,0.18)'
+          }}>
+            <div style={{fontSize:'1.3rem', fontWeight:700, marginBottom:'6px'}}>🤝 Yujin ขอ Recruit</div>
+            <div style={{fontSize:'0.85rem', color:'#666', marginBottom:'16px'}}>Yujin เห็นว่างานต้องการ skill เพิ่มค่ะ</div>
+            <div style={{background:'#f9fafb', borderRadius:'10px', padding:'14px', marginBottom:'18px'}}>
+              <div style={{fontWeight:700, fontSize:'1rem'}}>{recruitRequest.name}</div>
+              <div style={{color:'#555', fontSize:'0.85rem', margin:'4px 0'}}>{recruitRequest.role}</div>
+              <div style={{color:'#888', fontSize:'0.8rem', marginTop:'6px'}}>เหตุผล: {recruitRequest.reason}</div>
+              <div style={{display:'flex', gap:'6px', marginTop:'8px', flexWrap:'wrap'}}>
+                <span style={{background:'#ecfdf5',color:'#059669',fontSize:'0.72rem',padding:'2px 8px',borderRadius:'8px',border:'1px solid #a7f3d0'}}>
+                  {MODEL_SHORT[recruitRequest.llm_model] || recruitRequest.llm_model}
+                </span>
+                {(recruitRequest.capabilities || []).map(c => (
+                  <span key={c} style={{background:'#eff6ff',color:'#2563eb',fontSize:'0.72rem',padding:'2px 8px',borderRadius:'8px',border:'1px solid #bfdbfe'}}>
+                    {{'shell_tool':'💻','db_tool':'🗄️','file_tool':'📄','image_tool':'🎨'}[c] || '🔧'} {c.replace('_tool','')}
+                  </span>
+                ))}
+              </div>
+            </div>
+            <div style={{display:'flex', gap:'10px'}}>
+              <button
+                onClick={() => decideRecruit(true)}
+                style={{flex:1, background:'#7c3aed', color:'white', border:'none', borderRadius:'10px', padding:'10px', fontSize:'0.9rem', cursor:'pointer', fontWeight:600}}
+              >✅ Approve</button>
+              <button
+                onClick={() => decideRecruit(false)}
+                style={{flex:1, background:'#f3f4f6', color:'#555', border:'none', borderRadius:'10px', padding:'10px', fontSize:'0.9rem', cursor:'pointer'}}
+              >❌ Decline</button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="workspace-header">
         <div style={{minWidth:0}}>
           <div className="workspace-title">👥 {team.name}</div>

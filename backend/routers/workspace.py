@@ -3,8 +3,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from core.database import get_db
 from models.models import WorkspaceMessage, Team, Worker
-from services.team_executor import run_team_task
+from services.team_executor import run_team_task, resolve_recruit
 from pydantic import BaseModel
+from typing import Optional, List
 import json, uuid
 from datetime import datetime, timezone
 
@@ -22,6 +23,21 @@ async def get_history(team_id: str, db: AsyncSession = Depends(get_db)):
     msgs = result.scalars().all()
     return [{"id": str(m.id), "sender": m.sender, "sender_type": m.sender_type,
              "content": m.content, "created_at": m.created_at.isoformat()} for m in msgs]
+
+
+class RecruitDecision(BaseModel):
+    approved: bool
+    worker: Optional[dict] = None  # name, role, llm_model, capabilities
+
+@router.post("/{team_id}/recruit")
+async def decide_recruit(team_id: str, data: RecruitDecision):
+    """พี่ approve หรือ decline recruit request"""
+    if data.approved and data.worker:
+        resolve_recruit(team_id, data.worker)
+    else:
+        resolve_recruit(team_id, None)
+    return {"success": True}
+
 
 @router.websocket("/{team_id}/ws")
 async def workspace_ws(websocket: WebSocket, team_id: str, db: AsyncSession = Depends(get_db)):
@@ -45,7 +61,7 @@ async def workspace_ws(websocket: WebSocket, team_id: str, db: AsyncSession = De
                 for ws in connections.get(team_id, []):
                     try:
                         await ws.send_text(json.dumps(msg_data))
-                    except:
+                    except Exception:
                         dead.append(ws)
                 for ws in dead:
                     connections[team_id].remove(ws)
