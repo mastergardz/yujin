@@ -87,24 +87,14 @@ export default function Chat() {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() }
   }
 
-  const handlePaste = async (e) => {
+  const handlePaste = (e) => {
     const items = Array.from(e.clipboardData?.items || [])
     const imgItem = items.find(i => i.type.startsWith('image/'))
     if (!imgItem) return
     e.preventDefault()
     const file = imgItem.getAsFile()
     const preview = URL.createObjectURL(file)
-    setPastedImage({ file, preview })
-    setAnalyzingPaste(true)
-    try {
-      const form = new FormData()
-      form.append('file', file, 'paste.png')
-      const res = await fetch('/api/files/analyze', { method: 'POST', body: form })
-      if (!res.ok) { setPastedImage(null); return }
-      const data = await res.json()
-      setPastedImage(prev => ({ ...prev, analysis: data.analysis }))
-    } catch { setPastedImage(null) }
-    finally { setAnalyzingPaste(false) }
+    setPastedImage({ file, preview, analysis: null })
   }
 
   const selectRoom = (room) => {

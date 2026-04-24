@@ -49,9 +49,9 @@ export default function Workspace({ team }) {
   const [task, setTask] = useState('')
   const [connected, setConnected] = useState(false)
   const [running, setRunning] = useState(false)
+  const [sending, setSending] = useState(false) // analyzing on send
   const [typingInfo, setTypingInfo] = useState(null)
-  const [attachedFile, setAttachedFile] = useState(null)
-  const [analyzing, setAnalyzing] = useState(false)
+  const [pendingFile, setPendingFile] = useState(null) // { file, filename, preview } — รอส่ง
   const wsRef = useRef(null)
   const bottomRef = useRef(null)
   const reconnectTimer = useRef(null)
@@ -100,53 +100,55 @@ export default function Workspace({ team }) {
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
 
-  const analyzeFile = async (file, filename) => {
-    setAnalyzing(true)
-    setAttachedFile(null)
-    try {
-      const form = new FormData()
-      form.append('file', file, filename || file.name)
-      const res = await fetch('/api/files/analyze', { method: 'POST', body: form })
-      if (!res.ok) { const err = await res.json(); alert(err.detail); return }
-      const data = await res.json()
-      const preview = file.type.startsWith('image/') ? URL.createObjectURL(file) : null
-      setAttachedFile({ name: data.filename, analysis: data.analysis, mime: data.mime_type, preview })
-    } catch (err) {
-      alert('วิเคราะห์ไฟล์ไม่ได้ค่ะ: ' + err.message)
-    } finally {
-      setAnalyzing(false)
-    }
-  }
-
-  const handleFileChange = async (e) => {
-    const file = e.target.files[0]
-    if (!file) return
-    await analyzeFile(file, file.name)
-    e.target.value = ''
-  }
-
-  const handlePaste = async (e) => {
+  // paste รูป — แค่เก็บ file ไว้ ยังไม่วิเคราะห์
+  const handlePaste = (e) => {
     const items = Array.from(e.clipboardData?.items || [])
     const imgItem = items.find(i => i.type.startsWith('image/'))
     if (!imgItem) return
     e.preventDefault()
-    await analyzeFile(imgItem.getAsFile(), 'paste.png')
+    const file = imgItem.getAsFile()
+    const preview = URL.createObjectURL(file)
+    setPendingFile({ file, filename: 'paste.png', preview })
   }
 
-  const runTask = () => {
-    if ((!task.trim() && !attachedFile) || !connected || running) return
-    const payload = { task: task.trim() || '(ดูไฟล์แนบ)' }
-    if (attachedFile) {
-      payload.file_context = '[ไฟล์: ' + attachedFile.name + ']\n' + attachedFile.analysis
-    }
-    if (attachedFile && attachedFile.preview) {
-      pendingImageRef.current = attachedFile.preview
-    }
-    wsRef.current.send(JSON.stringify(payload))
-    setTask('')
-    setAttachedFile(null)
-    setRunning(true)
+  // เลือกไฟล์ — แค่เก็บ file ไว้ ยังไม่วิเคราะห์
+  const handleFileChange = (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    const preview = file.type.startsWith('image/') ? URL.createObjectURL(file) : null
+    setPendingFile({ file, filename: file.name, preview })
+    e.target.value = ''
   }
+
+  const runTask = async () => {
+    if ((!task.trim() && !pendingFile) || !connected || running || sending) return
+    setSending(true)
+    try {
+      let file_context = null
+      if (pendingFile) {
+        // วิเคราะห์ตอนกดส่ง
+        const form = new FormData()
+        form.append('file', pendingFile.file, pendingFile.filename)
+        const res = await fetch('/api/files/analyze', { method: 'POST', body: form })
+        if (!res.ok) { const err = await res.json(); alert(err.detail); return }
+        const data = await res.json()
+        file_context = '[ไฟล์: ' + data.filename + ']\n' + data.analysis
+      }
+
+      const payload = { task: task.trim() || '(ดูไฟล์แนบ)' }
+      if (file_context) payload.file_context = file_context
+      if (pendingFile?.preview) pendingImageRef.current = pendingFile.preview
+
+      wsRef.current.send(JSON.stringify(payload))
+      setTask('')
+      setPendingFile(null)
+      setRunning(true)
+    } finally {
+      setSending(false)
+    }
+  }
+
+  const canSend = connected && !running && !sending && (task.trim() || pendingFile)
 
   return (
     <div className="workspace">
@@ -175,7 +177,7 @@ export default function Workspace({ team }) {
         {messages.length === 0 && (
           <div className="empty-chat" style={{marginTop:'40px'}}>
             <div className="empty-icon">👥</div>
-            <div>สั่งงานทีมได้เลยค่ะ พี่<br/>แนบไฟล์หรือ paste รูปได้เลยค่ะ</div>
+            <div>สั่งงานทีมได้เลยค่ะ พี่<br/>paste รูปหรือแนบไฟล์ได้เลยค่ะ</div>
           </div>
         )}
         {messages.map((m, i) => {
@@ -217,17 +219,14 @@ export default function Workspace({ team }) {
         <div ref={bottomRef} />
       </div>
 
-      {(attachedFile || analyzing) && (
+      {pendingFile && (
         <div style={{padding:'8px 16px',background:'#f5f0ff',borderTop:'1px solid #e9d5ff',display:'flex',alignItems:'center',gap:8}}>
-          {analyzing ? (
-            <span style={{fontSize:'0.8rem',color:'#7c3aed'}}>⏳ Yujin กำลังอ่านไฟล์...</span>
-          ) : (
-            <>
-              {attachedFile.preview && <img src={attachedFile.preview} style={{height:36,borderRadius:6,objectFit:'cover'}} alt="preview" />}
-              <span style={{fontSize:'0.8rem',color:'#7c3aed',flex:1}}>📎 {attachedFile.name} ✓</span>
-              <button onClick={() => setAttachedFile(null)} style={{background:'none',border:'none',cursor:'pointer',color:'#999',fontSize:'1rem'}}>✕</button>
-            </>
-          )}
+          {pendingFile.preview
+            ? <img src={pendingFile.preview} style={{height:36,borderRadius:6,objectFit:'cover'}} alt="preview" />
+            : <span style={{fontSize:'1.2rem'}}>📄</span>
+          }
+          <span style={{fontSize:'0.8rem',color:'#7c3aed',flex:1}}>📎 {pendingFile.filename}</span>
+          <button onClick={() => setPendingFile(null)} style={{background:'none',border:'none',cursor:'pointer',color:'#999',fontSize:'1rem'}}>✕</button>
         </div>
       )}
 
@@ -235,13 +234,13 @@ export default function Workspace({ team }) {
         <input type="file" ref={fileInputRef} accept={ACCEPT} onChange={handleFileChange} style={{display:'none'}} />
         <button
           onClick={() => fileInputRef.current.click()}
-          disabled={!connected || running || analyzing}
+          disabled={!connected || running}
           title="แนบไฟล์/รูป"
           style={{
             background:'none', border:'1.5px solid #e5e5ea', borderRadius:'8px',
             padding:'8px 10px', cursor:'pointer', fontSize:'1.1rem',
             color:'#7c3aed', flexShrink:0,
-            opacity:(!connected || running || analyzing) ? 0.4 : 1
+            opacity:(!connected || running) ? 0.4 : 1
           }}
         >📎</button>
         <textarea
@@ -249,13 +248,12 @@ export default function Workspace({ team }) {
           onChange={e => setTask(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), runTask())}
           onPaste={handlePaste}
-          placeholder="สั่งงานทีม... หรือ paste รูป/แนบไฟล์ได้เลยค่ะ"
-          disabled={!connected || running || analyzing}
+          placeholder="สั่งงานทีม... หรือ paste รูปได้เลยค่ะ"
+          disabled={!connected || running}
           rows={2}
         />
-        <button className="send-btn" onClick={runTask}
-          disabled={!connected || running || analyzing || (!task.trim() && !attachedFile)}>
-          {running ? '⏳' : 'ส่ง'}
+        <button className="send-btn" onClick={runTask} disabled={!canSend}>
+          {sending ? '⏳' : running ? '⏳' : 'ส่ง'}
         </button>
       </div>
     </div>
