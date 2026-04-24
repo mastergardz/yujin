@@ -37,19 +37,24 @@ function Avatar({ sender, senderType, workerNames }) {
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       fontSize: '0.8rem', fontWeight: 700, color: color.text
     }}>
-      {sender.charAt(0).toUpperCase()}
+      {sender.charAt(0)}
     </div>
   )
 }
+
+const ACCEPT = "image/jpeg,image/png,image/gif,image/webp,application/pdf,text/plain,text/csv,text/markdown,application/json"
 
 export default function Workspace({ team }) {
   const [messages, setMessages] = useState([])
   const [task, setTask] = useState('')
   const [connected, setConnected] = useState(false)
   const [running, setRunning] = useState(false)
+  const [attachedFile, setAttachedFile] = useState(null)   // { name, analysis, mime }
+  const [analyzing, setAnalyzing] = useState(false)
   const wsRef = useRef(null)
   const bottomRef = useRef(null)
   const reconnectTimer = useRef(null)
+  const fileInputRef = useRef(null)
 
   const workerNames = team.workers.map(w => w.name)
 
@@ -65,8 +70,7 @@ export default function Workspace({ team }) {
     ws.onmessage = (e) => {
       const data = JSON.parse(e.data)
       setMessages(prev => [...prev, data])
-      if (data.sender_type === 'yujin' && data.sender === 'Yujin' && !data.content.includes('รับงานแล้ว') && !data.content.startsWith('@')) {
-        // last yujin message that's not a task assignment = done
+      if (data.sender_type === 'yujin' && !data.content.includes('รับงานแล้ว') && !data.content.startsWith('@')) {
         setRunning(false)
       }
     }
@@ -74,9 +78,7 @@ export default function Workspace({ team }) {
   }
 
   useEffect(() => {
-    fetch(`/api/workspace/${team.id}/history`)
-      .then(r => r.json())
-      .then(setMessages)
+    fetch(`/api/workspace/${team.id}/history`).then(r => r.json()).then(setMessages)
     connect()
     return () => {
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current)
@@ -84,53 +86,68 @@ export default function Workspace({ team }) {
     }
   }, [team.id])
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
+
+  const handleFileChange = async (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    setAnalyzing(true)
+    setAttachedFile(null)
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      const res = await fetch('/api/files/analyze', { method: 'POST', body: form })
+      if (!res.ok) { const err = await res.json(); alert(err.detail); return }
+      const data = await res.json()
+      setAttachedFile({ name: data.filename, analysis: data.analysis, mime: data.mime_type })
+    } catch (err) {
+      alert('วิเคราะห์ไฟล์ไม่ได้ค่ะ: ' + err.message)
+    } finally {
+      setAnalyzing(false)
+      e.target.value = ''
+    }
+  }
 
   const runTask = () => {
-    if (!task.trim() || !connected || running) return
-    wsRef.current.send(JSON.stringify({ task }))
+    if ((!task.trim() && !attachedFile) || !connected || running) return
+    const payload = { task: task.trim() || '(ดูไฟล์แนบ)' }
+    if (attachedFile) payload.file_context = `[ไฟล์: ${attachedFile.name}]\n${attachedFile.analysis}`
+    wsRef.current.send(JSON.stringify(payload))
     setTask('')
+    setAttachedFile(null)
     setRunning(true)
   }
 
   return (
     <div className="workspace">
+      {/* Header */}
       <div className="workspace-header">
-        <div>
+        <div style={{minWidth:0}}>
           <div className="workspace-title">👥 {team.name}</div>
           <div className="workspace-workers">
-            {team.workers.map((w) => {
+            {team.workers.map(w => {
               const color = getWorkerColor(w.name, workerNames)
               const modelLabel = MODEL_SHORT[w.llm_model] || w.llm_model || ''
               return (
-                <span key={w.id} className="worker-chip" style={{
-                  background: color.bg, color: color.text,
-                  border: `1px solid ${color.border}`
-                }}>
+                <span key={w.id} className="worker-chip" style={{background:color.bg,color:color.text,border:`1px solid ${color.border}`}}>
                   <span>{w.name} — {w.role}</span>
-                  {modelLabel && (
-                    <span style={{
-                      display: 'block', fontSize: '0.65rem', opacity: 0.7,
-                      marginTop: '1px', fontWeight: 400
-                    }}>{modelLabel}</span>
-                  )}
+                  {modelLabel && <span style={{display:'block',fontSize:'0.65rem',opacity:0.7,marginTop:'1px',fontWeight:400}}>{modelLabel}</span>}
                 </span>
               )
             })}
           </div>
         </div>
         <span className={`ws-status ${connected ? 'online' : 'offline'}`}>
-          {connected ? '🟢 Connected' : '🔴 Reconnecting...'}
+          {connected ? '🟢' : '🔴'}
         </span>
       </div>
 
+      {/* Messages */}
       <div className="workspace-messages">
         {messages.length === 0 && (
-          <div className="empty-chat" style={{marginTop: '40px'}}>
+          <div className="empty-chat" style={{marginTop:'40px'}}>
             <div className="empty-icon">👥</div>
-            <div>สั่งงานทีมได้เลยค่ะ พี่<br/>Yujin จะมอบหมายงานให้แต่ละคน</div>
+            <div>สั่งงานทีมได้เลยค่ะ พี่<br/>แนบไฟล์หรือรูปได้ด้วยนะคะ</div>
           </div>
         )}
         {messages.map((m, i) => {
@@ -140,10 +157,10 @@ export default function Workspace({ team }) {
           const borderColor = isYujin ? '#7c3aed' : isUser ? '#fcd34d' : color.border
           const senderColor = isYujin ? '#7c3aed' : isUser ? '#92400e' : color.text
           return (
-            <div key={i} className="ws-msg" style={{ borderLeft: `3px solid ${borderColor}` }}>
+            <div key={i} className="ws-msg" style={{borderLeft:`3px solid ${borderColor}`}}>
               <div className="ws-msg-header">
                 <Avatar sender={m.sender} senderType={m.sender_type} workerNames={workerNames} />
-                <span className="ws-sender" style={{ color: senderColor }}>{m.sender}</span>
+                <span className="ws-sender" style={{color:senderColor}}>{m.sender}</span>
                 <span className="ws-time">{new Date(m.created_at).toLocaleTimeString('th-TH')}</span>
               </div>
               <div className="ws-content">{m.content}</div>
@@ -151,10 +168,10 @@ export default function Workspace({ team }) {
           )
         })}
         {running && (
-          <div className="ws-msg" style={{borderLeft: '3px solid #7c3aed'}}>
+          <div className="ws-msg" style={{borderLeft:'3px solid #7c3aed'}}>
             <div className="ws-msg-header">
               <YujinAvatar size={32} />
-              <span className="ws-sender" style={{color: '#7c3aed'}}>Yujin</span>
+              <span className="ws-sender" style={{color:'#7c3aed'}}>Yujin</span>
             </div>
             <div className="bubble typing"><span/><span/><span/></div>
           </div>
@@ -162,16 +179,44 @@ export default function Workspace({ team }) {
         <div ref={bottomRef} />
       </div>
 
+      {/* File preview */}
+      {(attachedFile || analyzing) && (
+        <div style={{padding:'8px 16px', background:'#f5f0ff', borderTop:'1px solid #e9d5ff', display:'flex', alignItems:'center', gap:8}}>
+          {analyzing ? (
+            <span style={{fontSize:'0.8rem', color:'#7c3aed'}}>⏳ Yujin กำลังอ่านไฟล์...</span>
+          ) : (
+            <>
+              <span style={{fontSize:'0.8rem', color:'#7c3aed'}}>📎 {attachedFile.name}</span>
+              <button onClick={() => setAttachedFile(null)} style={{background:'none',border:'none',cursor:'pointer',color:'#999',fontSize:'1rem'}}>✕</button>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Input */}
       <div className="workspace-input">
+        <input type="file" ref={fileInputRef} accept={ACCEPT} onChange={handleFileChange} style={{display:'none'}} />
+        <button
+          onClick={() => fileInputRef.current.click()}
+          disabled={!connected || running || analyzing}
+          title="แนบไฟล์/รูป"
+          style={{
+            background: 'none', border: '1.5px solid #e5e5ea', borderRadius: '8px',
+            padding: '8px 10px', cursor: 'pointer', fontSize: '1.1rem',
+            color: '#7c3aed', flexShrink: 0,
+            opacity: (!connected || running || analyzing) ? 0.4 : 1
+          }}
+        >📎</button>
         <textarea
           value={task}
           onChange={e => setTask(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), runTask())}
-          placeholder="สั่งงานทีมนี้... Yujin จะแบ่งงานให้ worker แต่ละคนอัตโนมัติ"
-          disabled={!connected || running}
+          placeholder="สั่งงานทีม... หรือแนบไฟล์ได้เลยค่ะ"
+          disabled={!connected || running || analyzing}
           rows={2}
         />
-        <button className="send-btn" onClick={runTask} disabled={!connected || running || !task.trim()}>
+        <button className="send-btn" onClick={runTask}
+          disabled={!connected || running || analyzing || (!task.trim() && !attachedFile)}>
           {running ? '⏳' : 'ส่ง'}
         </button>
       </div>

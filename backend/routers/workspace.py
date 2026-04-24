@@ -37,6 +37,11 @@ async def workspace_ws(websocket: WebSocket, team_id: str, db: AsyncSession = De
             data = await websocket.receive_text()
             payload = json.loads(data)
             task = payload.get("task", "")
+            file_context = payload.get("file_context", "")
+            if file_context:
+                task = (task + "
+
+" + file_context).strip() if task.strip() else file_context
             if not task:
                 continue
 
