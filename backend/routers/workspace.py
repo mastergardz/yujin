@@ -5,15 +5,12 @@ from core.database import get_db
 from models.models import WorkspaceMessage, Team, Worker
 from services.team_executor import run_team_task
 from pydantic import BaseModel
-import json, uuid, asyncio
+import json, uuid
 from datetime import datetime, timezone
 
 router = APIRouter(prefix="/api/workspace", tags=["workspace"])
 
 connections: dict[str, list[WebSocket]] = {}
-
-class RunTask(BaseModel):
-    task: str
 
 @router.get("/{team_id}/history")
 async def get_history(team_id: str, db: AsyncSession = Depends(get_db)):
@@ -39,9 +36,7 @@ async def workspace_ws(websocket: WebSocket, team_id: str, db: AsyncSession = De
             task = payload.get("task", "")
             file_context = payload.get("file_context", "")
             if file_context:
-                task = (task + "
-
-" + file_context).strip() if task.strip() else file_context
+                task = (task.strip() + "\n\n" + file_context).strip() if task.strip() else file_context
             if not task:
                 continue
 
@@ -55,12 +50,13 @@ async def workspace_ws(websocket: WebSocket, team_id: str, db: AsyncSession = De
                 for ws in dead:
                     connections[team_id].remove(ws)
 
-            # Save & broadcast user message first
+            # Save & broadcast user message
+            display_task = payload.get("task", "") or "(แนบไฟล์)"
             user_msg = WorkspaceMessage(
                 team_id=uuid.UUID(team_id),
                 sender="พี่การ์ด",
                 sender_type="user",
-                content=task
+                content=display_task
             )
             db.add(user_msg)
             await db.commit()
@@ -68,7 +64,7 @@ async def workspace_ws(websocket: WebSocket, team_id: str, db: AsyncSession = De
                 "id": str(user_msg.id),
                 "sender": "พี่การ์ด",
                 "sender_type": "user",
-                "content": task,
+                "content": display_task,
                 "created_at": user_msg.created_at.isoformat()
             })
 
