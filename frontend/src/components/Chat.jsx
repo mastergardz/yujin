@@ -76,7 +76,7 @@ export default function Chat() {
     const msg = pastedImage?.analysis
       ? (input.trim() ? input + '\n\n[รูปที่แนบ]\n' + pastedImage.analysis : '[รูปที่แนบ]\n' + pastedImage.analysis)
       : input
-    setMessages(prev => [...prev, { role: 'user', content: input || '📎 รูปภาพ' }])
+    setMessages(prev => [...prev, { role: 'user', content: input || '', image: pastedImage?.preview || null }])
     wsRef.current.send(JSON.stringify({ message: msg }))
     setInput('')
     setPastedImage(null)
@@ -224,7 +224,10 @@ export default function Chat() {
             <div key={i} className={`message ${m.role}`}>
               {m.role === 'yujin' && <YujinAvatar />}
               <div className="msg-body">
-                <div className="bubble">{m.content}</div>
+                <div className="bubble">
+                  {m.image && <img src={m.image} style={{maxWidth:'100%',borderRadius:8,marginBottom: m.content ? 6 : 0,display:'block'}} alt="รูปที่ส่ง" />}
+                  {m.content && m.content}
+                </div>
                 {m.proposal && !m.approved && (
                   <div className="proposal-card">
                     <div className="proposal-title">📋 เสนอทีม: {m.proposal.team_name}</div>
