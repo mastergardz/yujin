@@ -161,7 +161,7 @@ export default function Workspace({ team }) {
               <div className="ws-msg-header">
                 <Avatar sender={m.sender} senderType={m.sender_type} workerNames={workerNames} />
                 <span className="ws-sender" style={{color:senderColor}}>{m.sender}</span>
-                <span className="ws-time">{new Date(m.created_at).toLocaleTimeString('th-TH')}</span>
+                <span className="ws-time">{new Date(m.created_at.endsWith('Z') ? m.created_at : m.created_at + 'Z').toLocaleTimeString('th-TH', {timeZone:'Asia/Bangkok'})}</span>
               </div>
               <div className="ws-content">{m.content}</div>
             </div>
