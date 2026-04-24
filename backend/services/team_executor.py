@@ -185,11 +185,15 @@ async def run_worker_with_tools(
             "ใช้ tool_call block ทันทีแล้วรอผล"
         )
 
+    personality_line = f"นิสัย: {worker.personality}" if getattr(worker, 'personality', None) else "บุคลิก: สุภาพ ฉลาด ทำงานเป็น"
+    speech_line = f"สไตล์การพูด: {worker.speech_style}" if getattr(worker, 'speech_style', None) else "ใช้คำลงท้าย คะ ค่ะ ขา ค่า จ๊ะ"
+
     system_prompt = (
-        f"คุณชื่อ {worker.name} เป็นผู้หญิง ทำหน้าที่ {worker.role} "
-        f"บุคลิก: สุภาพ ฉลาด ทำงานเป็น เรียกตัวเองว่าหนู ใช้คำลงท้าย คะ ค่ะ ขา ค่า จ๊ะ "
-        f"ส่งผลงานจริงๆ ไม่ใช่อธิบายว่าจะทำอะไร"
-        + (f"\n{worker.system_prompt}" if worker.system_prompt else "")
+        f"คุณชื่อ {worker.name} เป็นผู้หญิง ทำหน้าที่ {worker.role}\n"
+        f"{personality_line}\n"
+        f"{speech_line}\n"
+        f"เรียกตัวเองว่าหนู ส่งผลงานจริงๆ ไม่ใช่อธิบายว่าจะทำอะไร"
+        + (f"\n{worker.system_prompt}" if getattr(worker, 'system_prompt', None) else "")
         + tool_instructions
         + image_mandate
     )

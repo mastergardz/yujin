@@ -25,6 +25,9 @@ class Worker(Base):
     llm_model = Column(String(100))
     status = Column(String(20), default="idle")
     capabilities = Column(JSON, default=list)
+    avatar = Column(Text, nullable=True)        # emoji or initials override
+    personality = Column(Text, nullable=True)   # นิสัย เช่น "ขยัน ละเอียด ชอบตรวจสอบซ้ำ"
+    speech_style = Column(Text, nullable=True)  # สไตล์การพูด เช่น "สั้น กระชับ ไม่อ้อมค้อม"
     created_at = Column(DateTime, default=datetime.utcnow)
     team = relationship("Team", back_populates="workers")
 

@@ -92,20 +92,21 @@ function getWorkerColor(name, workerNames) {
   return WORKER_COLORS[Math.abs(idx) % WORKER_COLORS.length]
 }
 
-function Avatar({ sender, senderType, workerNames }) {
+function Avatar({ sender, senderType, workerNames, workers }) {
   if (senderType === 'yujin') return <YujinAvatar size={32} />
   if (senderType === 'user') return (
     <img src="/gard.png" style={{width:32,height:32,borderRadius:'50%',objectFit:'cover',flexShrink:0}} alt="พี่การ์ด" />
   )
   const color = getWorkerColor(sender, workerNames)
+  const workerAvatar = workers?.find(w => w.name === sender)?.avatar
   return (
     <div style={{
       width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
       background: color.bg, border: `1.5px solid ${color.border}`,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      fontSize: '0.8rem', fontWeight: 700, color: color.text
+      fontSize: workerAvatar ? '1.1rem' : '0.8rem', fontWeight: 700, color: color.text
     }}>
-      {sender.charAt(0)}
+      {workerAvatar || sender.charAt(0)}
     </div>
   )
 }
@@ -134,6 +135,8 @@ export default function Workspace({ team: initialTeam, onTeamUpdated }) {
   const [typingInfo, setTypingInfo] = useState(null)
   const [pendingFile, setPendingFile] = useState(null)
   const [editingWorker, setEditingWorker] = useState(null)
+  const [editingPersona, setEditingPersona] = useState(null) // worker id
+  const [personaForm, setPersonaForm] = useState({}) // {avatar, personality, speech_style}
   const [recruitRequest, setRecruitRequest] = useState(null) // {name, role, llm_model, capabilities, reason}
   const wsRef = useRef(null)
   const bottomRef = useRef(null)
@@ -159,6 +162,26 @@ export default function Workspace({ team: initialTeam, onTeamUpdated }) {
     await fetch(`/api/teams/workers/${workerId}`, { method: 'DELETE' })
     setTeam(prev => ({ ...prev, workers: prev.workers.filter(w => w.id !== workerId) }))
     if (onTeamUpdated) onTeamUpdated()
+  }
+
+  const openPersona = (w) => {
+    setEditingPersona(w.id)
+    setPersonaForm({ avatar: w.avatar || '', personality: w.personality || '', speech_style: w.speech_style || '' })
+  }
+
+  const savePersona = async (workerId) => {
+    const res = await fetch(`/api/teams/workers/${workerId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(personaForm)
+    })
+    if (res.ok) {
+      setTeam(prev => ({
+        ...prev,
+        workers: prev.workers.map(w => w.id === workerId ? { ...w, ...personaForm } : w)
+      }))
+    }
+    setEditingPersona(null)
   }
 
   const updateWorkerModel = async (workerId, newModel) => {
@@ -337,6 +360,52 @@ export default function Workspace({ team: initialTeam, onTeamUpdated }) {
           </div>
         </div>
       )}
+      {editingPersona && (() => {
+        const w = team.workers.find(w => w.id === editingPersona)
+        if (!w) return null
+        return (
+          <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center'}}
+            onClick={() => setEditingPersona(null)}>
+            <div style={{background:'white',borderRadius:16,padding:24,minWidth:320,maxWidth:440,boxShadow:'0 8px 32px rgba(0,0,0,0.18)'}}
+              onClick={e => e.stopPropagation()}>
+              <div style={{fontWeight:700,fontSize:'1rem',marginBottom:16}}>✏️ แก้ Persona — {w.name}</div>
+              <label style={{fontSize:'0.8rem',color:'#555',display:'block',marginBottom:4}}>Avatar (emoji หรือตัวอักษร)</label>
+              <input
+                value={personaForm.avatar}
+                onChange={e => setPersonaForm(p => ({...p, avatar: e.target.value}))}
+                placeholder="เช่น 🎨 หรือ ป"
+                style={{width:'100%',padding:'8px 10px',borderRadius:8,border:'1px solid #e5e5ea',fontSize:'0.9rem',marginBottom:12,boxSizing:'border-box'}}
+              />
+              <label style={{fontSize:'0.8rem',color:'#555',display:'block',marginBottom:4}}>นิสัย / บุคลิก</label>
+              <textarea
+                value={personaForm.personality}
+                onChange={e => setPersonaForm(p => ({...p, personality: e.target.value}))}
+                placeholder="เช่น ละเอียด รอบคอบ ชอบตรวจสอบซ้ำก่อนส่ง"
+                rows={2}
+                style={{width:'100%',padding:'8px 10px',borderRadius:8,border:'1px solid #e5e5ea',fontSize:'0.9rem',marginBottom:12,resize:'vertical',boxSizing:'border-box'}}
+              />
+              <label style={{fontSize:'0.8rem',color:'#555',display:'block',marginBottom:4}}>สไตล์การพูด</label>
+              <textarea
+                value={personaForm.speech_style}
+                onChange={e => setPersonaForm(p => ({...p, speech_style: e.target.value}))}
+                placeholder="เช่น พูดสั้น กระชับ ตรงประเด็น ไม่อ้อมค้อม"
+                rows={2}
+                style={{width:'100%',padding:'8px 10px',borderRadius:8,border:'1px solid #e5e5ea',fontSize:'0.9rem',marginBottom:16,resize:'vertical',boxSizing:'border-box'}}
+              />
+              <div style={{display:'flex',gap:8}}>
+                <button onClick={() => savePersona(w.id)}
+                  style={{flex:1,background:'#7c3aed',color:'white',border:'none',borderRadius:10,padding:'10px',fontWeight:600,cursor:'pointer'}}>
+                  💾 บันทึก
+                </button>
+                <button onClick={() => setEditingPersona(null)}
+                  style={{flex:1,background:'#f3f4f6',color:'#555',border:'none',borderRadius:10,padding:'10px',cursor:'pointer'}}>
+                  ยกเลิก
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
       <div className="workspace-header">
         <div style={{minWidth:0}}>
           <div className="workspace-title">👥 {team.name}</div>
@@ -347,7 +416,11 @@ export default function Workspace({ team: initialTeam, onTeamUpdated }) {
               const isEditing = editingWorker === w.id
               return (
                 <span key={w.id} className="worker-chip" style={{background:color.bg,color:color.text,border:`1px solid ${color.border}`,position:'relative'}}>
-                  <span>{w.name} — {w.role}</span>
+                  <span
+                    onClick={e => { e.stopPropagation(); openPersona(w) }}
+                    style={{cursor:'pointer'}}
+                    title="แก้ persona"
+                  >{w.avatar || w.name.charAt(0)} {w.name} — {w.role}</span>
                   {modelLabel && (
                     <span
                       onClick={() => setEditingWorker(isEditing ? null : w.id)}
@@ -421,7 +494,7 @@ export default function Workspace({ team: initialTeam, onTeamUpdated }) {
           return (
             <div key={i} className="ws-msg" style={{borderLeft:`3px solid ${borderColor}`}}>
               <div className="ws-msg-header">
-                <Avatar sender={m.sender} senderType={m.sender_type} workerNames={workerNames} />
+                <Avatar sender={m.sender} senderType={m.sender_type} workerNames={workerNames} workers={team.workers} />
                 <span className="ws-sender" style={{color:senderColor}}>{m.sender}</span>
                 <span className="ws-time">{new Date(m.created_at.endsWith('Z') ? m.created_at : m.created_at + 'Z').toLocaleTimeString('th-TH', {timeZone:'Asia/Bangkok'})}</span>
               </div>
@@ -441,7 +514,7 @@ export default function Workspace({ team: initialTeam, onTeamUpdated }) {
           return (
             <div className="ws-msg" style={{borderLeft:`3px solid ${borderColor}`}}>
               <div className="ws-msg-header">
-                <Avatar sender={who.sender} senderType={who.senderType} workerNames={workerNames} />
+                <Avatar sender={who.sender} senderType={who.senderType} workerNames={workerNames} workers={team.workers} />
                 <span className="ws-sender" style={{color:senderColor}}>{who.sender}</span>
               </div>
               <div className="bubble typing"><span/><span/><span/></div>

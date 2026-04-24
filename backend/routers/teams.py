@@ -45,6 +45,9 @@ class WorkerCreate(BaseModel):
     role: str
     llm_model: str = "gemini-2.5-flash"
     capabilities: Optional[List[str]] = []
+    avatar: Optional[str] = None
+    personality: Optional[str] = None
+    speech_style: Optional[str] = None
 
 class TeamApprove(BaseModel):
     team_name: str
@@ -66,7 +69,8 @@ async def get_teams(db: AsyncSession = Depends(get_db)):
             "workers": [{
                 "id": str(w.id), "name": w.name, "role": w.role,
                 "llm_model": w.llm_model, "status": w.status,
-                "capabilities": w.capabilities or []
+                "capabilities": w.capabilities or [],
+                "avatar": w.avatar, "personality": w.personality, "speech_style": w.speech_style
             } for w in workers]
         })
     return response
@@ -90,7 +94,10 @@ async def approve_team(data: TeamApprove, db: AsyncSession = Depends(get_db)):
             name=w.name,
             role=w.role,
             llm_model=model,
-            capabilities=caps
+            capabilities=caps,
+            avatar=w.avatar,
+            personality=w.personality,
+            speech_style=w.speech_style,
         )
         db.add(worker)
 
@@ -110,6 +117,9 @@ async def delete_team(team_id: str, db: AsyncSession = Depends(get_db)):
 class WorkerUpdate(BaseModel):
     llm_model: Optional[str] = None
     capabilities: Optional[List[str]] = None
+    avatar: Optional[str] = None
+    personality: Optional[str] = None
+    speech_style: Optional[str] = None
 
 @router.patch("/workers/{worker_id}")
 async def update_worker(worker_id: str, data: WorkerUpdate, db: AsyncSession = Depends(get_db)):
@@ -125,8 +135,13 @@ async def update_worker(worker_id: str, data: WorkerUpdate, db: AsyncSession = D
             worker.capabilities or []
         )
     elif data.capabilities is not None:
-        # capabilities เปลี่ยน ต้องตรวจ model ด้วย
         worker.llm_model = enforce_model_capability(worker.llm_model or "gemini-2.5-flash", worker.capabilities or [])
+    if data.avatar is not None:
+        worker.avatar = data.avatar
+    if data.personality is not None:
+        worker.personality = data.personality
+    if data.speech_style is not None:
+        worker.speech_style = data.speech_style
     await db.commit()
     return {
         "success": True,
@@ -134,6 +149,9 @@ async def update_worker(worker_id: str, data: WorkerUpdate, db: AsyncSession = D
         "name": worker.name,
         "llm_model": worker.llm_model,
         "capabilities": worker.capabilities or [],
+        "avatar": worker.avatar,
+        "personality": worker.personality,
+        "speech_style": worker.speech_style,
     }
 
 @router.delete("/workers/{worker_id}")
