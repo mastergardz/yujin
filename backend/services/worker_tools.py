@@ -159,15 +159,27 @@ IMAGE_MODELS = {
 }
 DEFAULT_IMAGE_MODEL = "gemini-2.5-flash-image"
 
-async def image_tool(prompt: str, filename: str = "image", model: str = None) -> dict:
+async def image_tool(prompt: str, filename: str = "image", model: str = None, db=None) -> dict:
     """Worker generates an image using Gemini native image generation"""
-    from core.config import settings
     try:
         from google import genai
         from google.genai import types
+        from services.llm import get_keys
 
-        client = genai.Client(api_key=settings.gemini_api_key)
-        model_id = model or DEFAULT_IMAGE_MODEL
+        keys = await get_keys(db)
+        gemini_key = keys.get("gemini", "")
+        if not gemini_key or gemini_key == "placeholder":
+            return {"success": False, "error": "ยังไม่ได้ตั้ง Gemini API Key ค่ะ — ไปตั้งได้ที่หน้า Settings"}
+
+        client = genai.Client(api_key=gemini_key)
+        # model id ที่ใช้ได้จริงกับ Gemini image gen API
+        MODEL_MAP = {
+            "gemini-2.5-flash-image": "gemini-2.0-flash-preview-image-generation",
+            "gemini-3.1-flash-image-preview": "gemini-2.0-flash-preview-image-generation",
+            "gemini-3-pro-image-preview": "gemini-2.0-flash-preview-image-generation",
+        }
+        raw_model = model or DEFAULT_IMAGE_MODEL
+        model_id = MODEL_MAP.get(raw_model, "gemini-2.0-flash-preview-image-generation")
 
         response = client.models.generate_content(
             model=model_id,
@@ -178,6 +190,7 @@ async def image_tool(prompt: str, filename: str = "image", model: str = None) ->
         )
 
         image_data = None
+        mime = "image/png"
         for part in response.candidates[0].content.parts:
             if part.inline_data and part.inline_data.mime_type.startswith("image/"):
                 image_data = part.inline_data.data

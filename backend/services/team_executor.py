@@ -211,7 +211,7 @@ async def run_worker_with_tools(
         elif tool_name == "file_tool":
             tool_result = await file_tool(**params)
         elif tool_name == "image_tool":
-            tool_result = await image_tool(**params)
+            tool_result = await image_tool(**params, db=db)
 
         result_str = json.dumps(tool_result, ensure_ascii=False)
         history.append({"role": "assistant", "content": resp})
