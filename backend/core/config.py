@@ -36,8 +36,8 @@ AVAILABLE_MODELS = [
         "cost": "high",
     },
     {
-        "id": "gemini-2.0-flash-lite",
-        "name": "Gemini 2.0 Flash Lite",
+        "id": "gemini-2.0-flash",
+        "name": "Gemini 2.0 Flash",
         "provider": "google",
         "description": "เบาและเร็วมาก ราคาถูกสุดในค่าย Gemini เหมาะงานง่ายซ้ำๆ สรุปข้อความ",
         "strengths": ["summarization", "simple tasks", "high volume"],

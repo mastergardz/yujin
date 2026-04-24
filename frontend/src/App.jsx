@@ -8,7 +8,7 @@ import './App.css'
 const MODEL_SHORT = {
   'gemini-2.5-flash': 'Gemini 2.5 Flash',
   'gemini-2.5-pro': 'Gemini 2.5 Pro',
-  'gemini-2.0-flash-lite': 'Gemini 2.0 Lite',
+  'gemini-2.0-flash': 'Gemini 2.0 Flash',
   'meta-llama/Llama-3.3-70B-Instruct-Turbo': 'Llama 3.3 70B',
   'meta-llama/Llama-4-Scout-17B-16E-Instruct': 'Llama 4 Scout',
   'meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo': 'Llama 3.1 8B',
