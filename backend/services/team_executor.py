@@ -77,24 +77,29 @@ async def run_team_task(task: str, team_id, db: AsyncSession, broadcast_fn=None)
 งานที่ได้รับ: {worker_task}
 บริบท: เป็นส่วนหนึ่งของงานใหญ่: {task}
 
-ทำงานที่ได้รับและรายงานผล"""
+สำคัญมาก: ส่งมอบผลงานจริงๆ เลย อย่าแค่บอกว่าจะทำอะไร
+ถ้างานคือเขียนบทความ → เขียนบทความให้เลย
+ถ้างานคือวิจัย → ส่งข้อมูลที่ค้นพบมาเลย
+ถ้างานคือออกแบบ → ส่งผลงานที่ออกแบบมาเลย"""
 
-        worker_result = await call_llm(worker_prompt, f"คุณชื่อ {worker_name} เป็นผู้หญิง ทำหน้าที่ {worker.role} บุคลิก: สุภาพ ฉลาด ทำงานเป็น เรียกตัวเองว่าหนู เรียก worker คนอื่นด้วยชื่อ ใช้คำลงท้าย คะ ค่ะ ขา ค่า จ๊ะ รายงานผลงานเป็นภาษาไทย", model=worker.llm_model, db=db)
+        worker_result = await call_llm(worker_prompt, f"คุณชื่อ {worker_name} เป็นผู้หญิง ทำหน้าที่ {worker.role} บุคลิก: สุภาพ ฉลาด ทำงานเป็น เรียกตัวเองว่าหนู เรียก worker คนอื่นด้วยชื่อ ใช้คำลงท้าย คะ ค่ะ ขา ค่า จ๊ะ ส่งผลงานจริงๆ ไม่ใช่อธิบายว่าจะทำอะไร", model=worker.llm_model, db=db)
         await broadcast(worker_name, "worker", worker_result)
         results.append({"worker": worker_name, "result": worker_result})
 
-    # Yujin สรุปผล
+    # Yujin ส่งงานให้พี่
     if results:
         summary_parts = "\n\n".join([f"**{r['worker']}:** {r['result']}" for r in results])
-        summary_prompt = f"""งานต้นฉบับ: {task}
+        summary_prompt = f"""งานต้นฉบับที่พี่สั่ง: {task}
 
 ผลงานจากทีม:
 {summary_parts}
 
-สรุปผลรวมให้กระชับและนำเสนอต่อ CEO"""
+ตอนนี้ส่งงานให้พี่เลย — ขึ้นต้นว่า "ส่งงานค่ะ พี่" หรือ "พี่คะ งานเสร็จแล้วค่ะ" แล้วนำเสนอผลงานจริงๆ จากทีม
+ถ้าทีมเขียนบทความมา ให้คัดเอาบทความที่ดีที่สุดมาส่งเลย ไม่ต้องสรุปว่าใครทำอะไร
+เน้นส่งเนื้อหาจริงๆ ที่พี่ใช้งานได้เลย"""
 
-        final = await call_llm(summary_prompt, "คุณคือ Yujin สรุปผลงานทีมให้ boss ฟัง", db=db)
-        await broadcast("Yujin", "yujin", f"📋 สรุปผล:\n{final}")
+        final = await call_llm(summary_prompt, "คุณคือ Yujin เลขา AI ผู้หญิง เรียกตัวเองว่าหนู เรียกผู้ใช้ว่าพี่ ใช้คำลงท้าย คะ ค่ะ ขา ค่า ห้ามเป็นทางการ ห้ามขึ้นต้นว่าเรียน ห้ามเรียกผู้ใช้ว่า CEO หรือผู้บริหาร ส่งงานแบบเพื่อนร่วมงานสนิท", db=db)
+        await broadcast("Yujin", "yujin", final)
         return final
 
     return "ทำงานเสร็จแล้วค่ะ"
