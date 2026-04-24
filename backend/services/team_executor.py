@@ -142,19 +142,34 @@ async def run_worker_with_tools(
     capabilities = getattr(worker, 'capabilities', None) or []
     tool_instructions = build_tool_instructions(capabilities)
     
+    # extra mandate ถ้า worker มี image_tool — ต้อง call tool จริงทุกครั้งที่งานเกี่ยวกับรูป
+    image_mandate = ""
+    if "image_tool" in capabilities:
+        image_mandate = (
+            "\n🚨 คุณมี image_tool — ถ้างานเกี่ยวกับรูปภาพ ต้อง call image_tool ก่อนตอบเสมอ "
+            "ห้าม hallucinate ลิงก์รูปหรืออธิบายภาพแทนการสร้างจริงๆ "
+            "ใช้ tool_call block ทันทีแล้วรอผล"
+        )
+
     system_prompt = (
         f"คุณชื่อ {worker.name} เป็นผู้หญิง ทำหน้าที่ {worker.role} "
         f"บุคลิก: สุภาพ ฉลาด ทำงานเป็น เรียกตัวเองว่าหนู ใช้คำลงท้าย คะ ค่ะ ขา ค่า จ๊ะ "
         f"ส่งผลงานจริงๆ ไม่ใช่อธิบายว่าจะทำอะไร"
         + (f"\n{worker.system_prompt}" if worker.system_prompt else "")
         + tool_instructions
+        + image_mandate
     )
-    
+
+    task_mandate = ""
+    if "image_tool" in capabilities:
+        task_mandate = "\n\n⚠️ ถ้างานนี้เกี่ยวกับรูปภาพ ให้ call image_tool ทันทีเป็นขั้นตอนแรก ก่อนตอบอะไรทั้งนั้น"
+
     user_prompt = (
         f"บทบาทของคุณ: {worker.role}\n"
         f"งานที่ได้รับ: {worker_task}\n"
         f"บริบท: เป็นส่วนหนึ่งของงานใหญ่: {big_task}\n\n"
         f"สำคัญมาก: ส่งมอบผลงานจริงๆ เลย อย่าแค่บอกว่าจะทำอะไร"
+        + task_mandate
     )
 
     history = [{"role": "user", "content": user_prompt}]
@@ -279,7 +294,7 @@ async def run_team_task(task: str, team_id, db: AsyncSession, broadcast_fn=None)
     await broadcast_typing("Yujin", "yujin")
     plan_text, usage = await call_llm_with_usage(
         plan_prompt,
-        "คุณคือ Yujin เลขา AI ผู้หญิง กำลังวางแผนงาน ตอบเป็น JSON เท่านั้น ห้ามมี text อื่น",
+        "คุณชื่อ ยูจิน เป็นเลขา AI ผู้หญิง กำลังวางแผนงาน ตอบเป็น JSON เท่านั้น ห้ามมี text อื่น",
         db=db
     )
     usage_log.append(usage)
@@ -378,7 +393,7 @@ async def run_team_task(task: str, team_id, db: AsyncSession, broadcast_fn=None)
         await broadcast_typing("Yujin", "yujin")
         final, usage = await call_llm_with_usage(
             summary_prompt,
-            "คุณคือ Yujin เลขา AI ผู้หญิง เรียกตัวเองว่าหนู เรียกผู้ใช้ว่าพี่ ใช้คำลงท้าย คะ ค่ะ ขา ค่า ห้ามเป็นทางการ ห้ามขึ้นต้นว่าเรียน ห้ามเรียกผู้ใช้ว่า CEO หรือผู้บริหาร ส่งงานแบบเพื่อนร่วมงานสนิท",
+            "คุณชื่อ ยูจิน เป็นเลขา AI ผู้หญิง เรียกตัวเองว่าหนู เรียกผู้ใช้ว่าพี่ ใช้คำลงท้าย คะ ค่ะ ขา ค่า ห้ามเป็นทางการ ห้ามขึ้นต้นว่าเรียน ห้ามเรียกผู้ใช้ว่า CEO หรือผู้บริหาร ส่งงานแบบเพื่อนร่วมงานสนิท ห้ามเรียกตัวเองว่า Yujin หรือ ยูกิ้น ชื่อของหนูคือ ยูจิน เท่านั้น",
             db=db
         )
         usage_log.append(usage)
