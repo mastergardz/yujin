@@ -49,13 +49,14 @@ export default function Workspace({ team }) {
   const [task, setTask] = useState('')
   const [connected, setConnected] = useState(false)
   const [running, setRunning] = useState(false)
-  const [typingInfo, setTypingInfo] = useState(null) // {sender, senderType}
-  const [attachedFile, setAttachedFile] = useState(null)   // { name, analysis, mime }
+  const [typingInfo, setTypingInfo] = useState(null)
+  const [attachedFile, setAttachedFile] = useState(null)
   const [analyzing, setAnalyzing] = useState(false)
   const wsRef = useRef(null)
   const bottomRef = useRef(null)
   const reconnectTimer = useRef(null)
   const fileInputRef = useRef(null)
+  const pendingImageRef = useRef(null)
 
   const workerNames = team.workers.map(w => w.name)
 
@@ -76,6 +77,10 @@ export default function Workspace({ team }) {
         return
       }
       setTypingInfo(null)
+      if (data.sender_type === 'user' && pendingImageRef.current) {
+        data.image = pendingImageRef.current
+        pendingImageRef.current = null
+      }
       setMessages(prev => [...prev, data])
       if (data.sender_type === 'yujin' && !data.content.includes('รับงานแล้ว') && !data.content.startsWith('@')) {
         setRunning(false)
@@ -95,30 +100,48 @@ export default function Workspace({ team }) {
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
 
-  const handleFileChange = async (e) => {
-    const file = e.target.files[0]
-    if (!file) return
+  const analyzeFile = async (file, filename) => {
     setAnalyzing(true)
     setAttachedFile(null)
     try {
       const form = new FormData()
-      form.append('file', file)
+      form.append('file', file, filename || file.name)
       const res = await fetch('/api/files/analyze', { method: 'POST', body: form })
       if (!res.ok) { const err = await res.json(); alert(err.detail); return }
       const data = await res.json()
-      setAttachedFile({ name: data.filename, analysis: data.analysis, mime: data.mime_type })
+      const preview = file.type.startsWith('image/') ? URL.createObjectURL(file) : null
+      setAttachedFile({ name: data.filename, analysis: data.analysis, mime: data.mime_type, preview })
     } catch (err) {
       alert('วิเคราะห์ไฟล์ไม่ได้ค่ะ: ' + err.message)
     } finally {
       setAnalyzing(false)
-      e.target.value = ''
     }
+  }
+
+  const handleFileChange = async (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    await analyzeFile(file, file.name)
+    e.target.value = ''
+  }
+
+  const handlePaste = async (e) => {
+    const items = Array.from(e.clipboardData?.items || [])
+    const imgItem = items.find(i => i.type.startsWith('image/'))
+    if (!imgItem) return
+    e.preventDefault()
+    await analyzeFile(imgItem.getAsFile(), 'paste.png')
   }
 
   const runTask = () => {
     if ((!task.trim() && !attachedFile) || !connected || running) return
     const payload = { task: task.trim() || '(ดูไฟล์แนบ)' }
-    if (attachedFile) payload.file_context = `[ไฟล์: ${attachedFile.name}]\n${attachedFile.analysis}`
+    if (attachedFile) {
+      payload.file_context = '[ไฟล์: ' + attachedFile.name + ']\n' + attachedFile.analysis
+    }
+    if (attachedFile && attachedFile.preview) {
+      pendingImageRef.current = attachedFile.preview
+    }
     wsRef.current.send(JSON.stringify(payload))
     setTask('')
     setAttachedFile(null)
@@ -127,7 +150,6 @@ export default function Workspace({ team }) {
 
   return (
     <div className="workspace">
-      {/* Header */}
       <div className="workspace-header">
         <div style={{minWidth:0}}>
           <div className="workspace-title">👥 {team.name}</div>
@@ -149,12 +171,11 @@ export default function Workspace({ team }) {
         </span>
       </div>
 
-      {/* Messages */}
       <div className="workspace-messages">
         {messages.length === 0 && (
           <div className="empty-chat" style={{marginTop:'40px'}}>
             <div className="empty-icon">👥</div>
-            <div>สั่งงานทีมได้เลยค่ะ พี่<br/>แนบไฟล์หรือรูปได้ด้วยนะคะ</div>
+            <div>สั่งงานทีมได้เลยค่ะ พี่<br/>แนบไฟล์หรือ paste รูปได้เลยค่ะ</div>
           </div>
         )}
         {messages.map((m, i) => {
@@ -170,7 +191,10 @@ export default function Workspace({ team }) {
                 <span className="ws-sender" style={{color:senderColor}}>{m.sender}</span>
                 <span className="ws-time">{new Date(m.created_at.endsWith('Z') ? m.created_at : m.created_at + 'Z').toLocaleTimeString('th-TH', {timeZone:'Asia/Bangkok'})}</span>
               </div>
-              <div className="ws-content">{m.content}</div>
+              <div className="ws-content">
+                {m.image && <img src={m.image} style={{maxWidth:'100%',maxHeight:200,borderRadius:8,marginBottom:m.content?6:0,display:'block'}} alt="รูปแนบ" />}
+                {m.content}
+              </div>
             </div>
           )
         })}
@@ -181,7 +205,7 @@ export default function Workspace({ team }) {
           const borderColor = isYujin ? '#7c3aed' : color.border
           const senderColor = isYujin ? '#7c3aed' : color.text
           return (
-            <div className="ws-msg" style={{borderLeft: `3px solid ${borderColor}`}}>
+            <div className="ws-msg" style={{borderLeft:`3px solid ${borderColor}`}}>
               <div className="ws-msg-header">
                 <Avatar sender={who.sender} senderType={who.senderType} workerNames={workerNames} />
                 <span className="ws-sender" style={{color:senderColor}}>{who.sender}</span>
@@ -193,21 +217,20 @@ export default function Workspace({ team }) {
         <div ref={bottomRef} />
       </div>
 
-      {/* File preview */}
       {(attachedFile || analyzing) && (
-        <div style={{padding:'8px 16px', background:'#f5f0ff', borderTop:'1px solid #e9d5ff', display:'flex', alignItems:'center', gap:8}}>
+        <div style={{padding:'8px 16px',background:'#f5f0ff',borderTop:'1px solid #e9d5ff',display:'flex',alignItems:'center',gap:8}}>
           {analyzing ? (
-            <span style={{fontSize:'0.8rem', color:'#7c3aed'}}>⏳ Yujin กำลังอ่านไฟล์...</span>
+            <span style={{fontSize:'0.8rem',color:'#7c3aed'}}>⏳ Yujin กำลังอ่านไฟล์...</span>
           ) : (
             <>
-              <span style={{fontSize:'0.8rem', color:'#7c3aed'}}>📎 {attachedFile.name}</span>
+              {attachedFile.preview && <img src={attachedFile.preview} style={{height:36,borderRadius:6,objectFit:'cover'}} alt="preview" />}
+              <span style={{fontSize:'0.8rem',color:'#7c3aed',flex:1}}>📎 {attachedFile.name} ✓</span>
               <button onClick={() => setAttachedFile(null)} style={{background:'none',border:'none',cursor:'pointer',color:'#999',fontSize:'1rem'}}>✕</button>
             </>
           )}
         </div>
       )}
 
-      {/* Input */}
       <div className="workspace-input">
         <input type="file" ref={fileInputRef} accept={ACCEPT} onChange={handleFileChange} style={{display:'none'}} />
         <button
@@ -215,35 +238,18 @@ export default function Workspace({ team }) {
           disabled={!connected || running || analyzing}
           title="แนบไฟล์/รูป"
           style={{
-            background: 'none', border: '1.5px solid #e5e5ea', borderRadius: '8px',
-            padding: '8px 10px', cursor: 'pointer', fontSize: '1.1rem',
-            color: '#7c3aed', flexShrink: 0,
-            opacity: (!connected || running || analyzing) ? 0.4 : 1
+            background:'none', border:'1.5px solid #e5e5ea', borderRadius:'8px',
+            padding:'8px 10px', cursor:'pointer', fontSize:'1.1rem',
+            color:'#7c3aed', flexShrink:0,
+            opacity:(!connected || running || analyzing) ? 0.4 : 1
           }}
         >📎</button>
         <textarea
           value={task}
           onChange={e => setTask(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), runTask())}
-          onPaste={async (e) => {
-            const items = Array.from(e.clipboardData?.items || [])
-            const imgItem = items.find(i => i.type.startsWith('image/'))
-            if (!imgItem) return
-            e.preventDefault()
-            const file = imgItem.getAsFile()
-            setAnalyzing(true)
-            setAttachedFile(null)
-            try {
-              const form = new FormData()
-              form.append('file', file, 'paste.png')
-              const res = await fetch('/api/files/analyze', { method: 'POST', body: form })
-              if (!res.ok) return
-              const data = await res.json()
-              setAttachedFile({ name: 'รูปที่วาง', analysis: data.analysis, mime: data.mime_type })
-            } catch {}
-            finally { setAnalyzing(false) }
-          }}
-          placeholder="สั่งงานทีม... หรือแนบไฟล์ได้เลยค่ะ"
+          onPaste={handlePaste}
+          placeholder="สั่งงานทีม... หรือ paste รูป/แนบไฟล์ได้เลยค่ะ"
           disabled={!connected || running || analyzing}
           rows={2}
         />
