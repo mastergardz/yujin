@@ -80,7 +80,7 @@ export default function WorkerLibrary() {
   const modelLabel = (id) => ALL_MODELS.find(m => m.id === id)?.label || id
 
   if (mode === 'new' || mode === 'edit') return (
-    <div style={{padding:24}}>
+    <div style={{padding:24, flex:1, overflowY:'auto', height:'100vh'}}>
       <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:20}}>
         <button onClick={() => setMode('list')} style={{background:'none',border:'none',cursor:'pointer',fontSize:'1.2rem'}}>←</button>
         <h2 style={{margin:0,fontSize:'1.1rem'}}>{mode === 'new' ? '👤 Worker ใหม่' : `✏️ แก้ไข: ${selected?.name}`}</h2>
@@ -133,7 +133,7 @@ export default function WorkerLibrary() {
   )
 
   return (
-    <div style={{padding:24}}>
+    <div style={{padding:24, flex:1, overflowY:'auto', height:'100vh'}}>
       {assignTarget && (
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={() => setAssignTarget(null)}>
           <div style={{background:'white',borderRadius:16,padding:24,minWidth:320,boxShadow:'0 8px 32px rgba(0,0,0,0.18)'}} onClick={e => e.stopPropagation()}>
