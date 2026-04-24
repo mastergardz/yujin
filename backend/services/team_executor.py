@@ -414,7 +414,7 @@ async def run_team_task(task: str, team_id, db: AsyncSession, broadcast_fn=None)
             db=db,
         )
         await broadcast(worker_name, "worker", worker_result)
-        results.append({"worker": worker_name, "result": worker_result})
+        results.append({"worker": worker_name, "task": worker_task, "result": worker_result})
 
     if results:
         # ถ้าผลงานทั้งหมดเป็นรูปภาพ ไม่ต้อง Yujin summary ซ้ำ
@@ -426,6 +426,29 @@ async def run_team_task(task: str, team_id, db: AsyncSession, broadcast_fn=None)
             cost_msg = format_cost_summary(usage_log)
             if cost_msg:
                 await broadcast("Yujin", "yujin", cost_msg)
+            # review สำหรับ image workers
+            review_parts = "\n".join([
+                f"- **{r['worker']}**: งาน: {r['task'][:100]} | ผล: สร้างภาพสำเร็จ"
+                for r in results
+            ])
+            review_prompt = f"""งานต้นฉบับ: {task}
+
+ผลงาน:
+{review_parts}
+
+ประเมินผลงาน ตอบในรูปแบบนี้เท่านั้น:
+📊 **ประเมินผลรอบนี้**
+| Worker | ⭐ | Workload | ความเห็น |
+|--------|-----|----------|---------|
+| ชื่อ | X/5 | เบา/ปานกลาง/หนัก | ... |"""
+            await broadcast_typing("Yujin", "yujin")
+            review, usage = await call_llm_with_usage(
+                review_prompt,
+                "คุณชื่อ ยูจิน เป็นเลขา AI ผู้หญิง ประเมินผลงานทีมตรงไปตรงมา ไม่อวย",
+                db=db
+            )
+            usage_log.append(usage)
+            await broadcast("Yujin", "yujin", review)
             return results[0]["result"]
 
         summary_parts = "\n\n".join([f"**{r['worker']}:** {r['result']}" for r in results])
@@ -451,6 +474,36 @@ async def run_team_task(task: str, team_id, db: AsyncSession, broadcast_fn=None)
         cost_msg = format_cost_summary(usage_log)
         if cost_msg:
             await broadcast("Yujin", "yujin", cost_msg)
+
+        # Phase 3 — Performance Review
+        review_parts = "\n".join([
+            f"- **{r['worker']}**: งานที่ได้รับ: {r['task']} | ผลงาน: {r['result'][:300]}"
+            for r in results
+        ])
+        review_prompt = f"""งานต้นฉบับ: {task}
+
+ผลงานแต่ละคน:
+{review_parts}
+
+ประเมินผลงานแต่ละคนในรอบนี้ โดย:
+- ให้คะแนน ⭐ 1-5 (5 = ดีเยี่ยม)
+- บอก workload ว่างานนี้หนักแค่ไหน (เบา/ปานกลาง/หนัก)
+- comment สั้น 1 บรรทัดว่าผลงานน่าเชื่อถือแค่ไหน
+
+ตอบในรูปแบบนี้เท่านั้น (ห้ามมี text อื่นนำหน้า):
+📊 **ประเมินผลรอบนี้**
+| Worker | ⭐ | Workload | ความเห็น |
+|--------|-----|----------|---------|
+| ชื่อ | X/5 | เบา/ปานกลาง/หนัก | ... |"""
+
+        await broadcast_typing("Yujin", "yujin")
+        review, usage = await call_llm_with_usage(
+            review_prompt,
+            "คุณชื่อ ยูจิน เป็นเลขา AI ผู้หญิง ประเมินผลงานทีมตรงไปตรงมา ไม่อวย ถ้างานไม่ดีบอกตรงๆ",
+            db=db
+        )
+        usage_log.append(usage)
+        await broadcast("Yujin", "yujin", review)
 
         return final
 
