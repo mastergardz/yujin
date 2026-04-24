@@ -3,16 +3,33 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from core.database import get_db
 from models.models import Team, Worker
+from core.config import AVAILABLE_MODELS
 from pydantic import BaseModel
 from typing import List, Optional
 import uuid
 
 router = APIRouter(prefix="/api/teams", tags=["teams"])
 
+VALID_MODEL_IDS = {m["id"] for m in AVAILABLE_MODELS}
+
+def normalize_model_id(model_id: str) -> str:
+    """Fix common Yujin mistakes — short names to full IDs"""
+    if not model_id or model_id in VALID_MODEL_IDS:
+        return model_id
+    lower = model_id.lower()
+    if "llama" in lower and not model_id.startswith("meta-llama/"):
+        if "3.3" in model_id or "70b" in lower:
+            return "meta-llama/Llama-3.3-70B-Instruct-Turbo"
+        if "scout" in lower or "4" in model_id:
+            return "meta-llama/Llama-4-Scout-17B-16E-Instruct"
+        if "8b" in lower or "3.1" in model_id:
+            return "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo"
+    return model_id if model_id in VALID_MODEL_IDS else "gemini-2.5-flash"
+
 class WorkerCreate(BaseModel):
     name: str
     role: str
-    llm_model: str = "gemini-2.0-flash-exp"
+    llm_model: str = "gemini-2.5-flash"
 
 class TeamApprove(BaseModel):
     team_name: str
@@ -38,10 +55,11 @@ async def get_teams(db: AsyncSession = Depends(get_db)):
 
 @router.post("/approve")
 async def approve_team(data: TeamApprove, db: AsyncSession = Depends(get_db)):
+    first_model = normalize_model_id(data.workers[0].llm_model) if data.workers else "gemini-2.5-flash"
     team = Team(
         name=data.team_name,
         description=data.description,
-        llm_model=data.workers[0].llm_model if data.workers else "gemini-2.0-flash-exp"
+        llm_model=first_model
     )
     db.add(team)
     await db.flush()
@@ -51,7 +69,7 @@ async def approve_team(data: TeamApprove, db: AsyncSession = Depends(get_db)):
             team_id=team.id,
             name=w.name,
             role=w.role,
-            llm_model=w.llm_model
+            llm_model=normalize_model_id(w.llm_model)
         )
         db.add(worker)
 
