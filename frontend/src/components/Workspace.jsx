@@ -24,23 +24,59 @@ const MODEL_SHORT = {
 
 function WsContent({ content }) {
   if (!content) return null
-  const parts = content.split(/(\[.*?\]\(\/api\/files\/download\/[^\)]+\))/g)
+
+  // split by markdown images ![alt](url), markdown links [text](url), and bare /api/files/download/ urls
+  const TOKEN = /(!?\[.*?\]\([^\)]+\)|https?:\/\/\S+|\/api\/files\/download\/\S+)/g
+  const parts = content.split(TOKEN)
+
+  const isImageUrl = (url) => /\.(png|jpg|jpeg|gif|webp)$/i.test(url.split('?')[0])
+  const isLocalFile = (url) => url.startsWith('/api/files/download/')
+
   return (
     <span style={{whiteSpace:'pre-wrap',wordBreak:'break-word'}}>
       {parts.map((part, i) => {
-        const match = part.match(/^\[(.*?)\]\((\/api\/files\/download\/[^\)]+)\)$/)
-        if (match) {
-          const label = match[1]
-          const url = match[2]
-          const isImage = /\.(png|jpg|jpeg|gif|webp)$/i.test(url)
-          if (isImage) return (
-            <span key={i} style={{display:'block',margin:'6px 0'}}>
-              <img src={url} style={{maxWidth:'100%',maxHeight:300,borderRadius:8,display:'block',marginBottom:4}} alt={label} />
-              <a href={url} download style={{fontSize:'0.75rem',color:'#7c3aed'}}>⬇️ {label}</a>
+        // markdown image: ![alt](url)
+        const mdImg = part.match(/^!\[(.*?)\]\(([^\)]+)\)$/)
+        if (mdImg) {
+          const [, alt, url] = mdImg
+          const displayUrl = isLocalFile(url) ? url : null
+          return (
+            <span key={i} style={{display:'block',margin:'8px 0'}}>
+              <img src={url} alt={alt} style={{maxWidth:'100%',maxHeight:400,borderRadius:10,display:'block',marginBottom:4,border:'1px solid #e5e5ea'}} />
+              {displayUrl && <a href={displayUrl} download style={{fontSize:'0.75rem',color:'#7c3aed'}}>⬇️ {alt || 'ดาวน์โหลด'}</a>}
             </span>
           )
-          return <a key={i} href={url} download style={{color:'#7c3aed',textDecoration:'underline'}}>📎 {label}</a>
         }
+
+        // markdown link: [text](url)
+        const mdLink = part.match(/^\[(.*?)\]\(([^\)]+)\)$/)
+        if (mdLink) {
+          const [, label, url] = mdLink
+          if (isLocalFile(url)) {
+            if (isImageUrl(url)) return (
+              <span key={i} style={{display:'block',margin:'8px 0'}}>
+                <img src={url} alt={label} style={{maxWidth:'100%',maxHeight:400,borderRadius:10,display:'block',marginBottom:4,border:'1px solid #e5e5ea'}} />
+                <a href={url} download style={{fontSize:'0.75rem',color:'#7c3aed'}}>⬇️ {label}</a>
+              </span>
+            )
+            return <a key={i} href={url} download style={{color:'#7c3aed',textDecoration:'underline'}}>📎 {label}</a>
+          }
+          // external link — show as text only (don't linkify)
+          return <span key={i}>{label}</span>
+        }
+
+        // bare /api/files/download/ url
+        if (part.startsWith('/api/files/download/')) {
+          const fname = part.split('/').pop()
+          if (isImageUrl(part)) return (
+            <span key={i} style={{display:'block',margin:'8px 0'}}>
+              <img src={part} alt={fname} style={{maxWidth:'100%',maxHeight:400,borderRadius:10,display:'block',marginBottom:4,border:'1px solid #e5e5ea'}} />
+              <a href={part} download style={{fontSize:'0.75rem',color:'#7c3aed'}}>⬇️ {fname}</a>
+            </span>
+          )
+          return <a key={i} href={part} download style={{color:'#7c3aed',textDecoration:'underline'}}>📎 {fname}</a>
+        }
+
         return <span key={i}>{part}</span>
       })}
     </span>
@@ -307,11 +343,6 @@ export default function Workspace({ team: initialTeam, onTeamUpdated }) {
                       title="คลิกเพื่อเปลี่ยน model"
                     >
                       {modelLabel} ✏️
-                    </span>
-                  )}
-                  {(w.capabilities || []).length > 0 && (
-                    <span style={{display:'block',fontSize:'0.6rem',opacity:0.65,marginTop:'2px'}}>
-                      {(w.capabilities || []).map(c => ({'shell_tool':'💻','db_tool':'🗄️','file_tool':'📄','image_tool':'🎨'}[c] || '🔧')).join(' ')}
                     </span>
                   )}
                   {isEditing && (

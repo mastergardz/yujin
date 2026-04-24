@@ -106,6 +106,15 @@ def build_tool_instructions(capabilities: list) -> str:
     if not tool_docs:
         return ""
     
+    has_image = "image_tool" in capabilities
+    has_file = "file_tool" in capabilities
+
+    mandatory = ""
+    if has_image:
+        mandatory += "\n⚠️ ถ้างานเกี่ยวกับการสร้างรูป ต้องเรียก image_tool จริงๆ เท่านั้น ห้าม hallucinate URL หรืออธิบายว่าภาพหน้าตายังไง"
+    if has_file:
+        mandatory += "\n⚠️ ถ้างานต้องการไฟล์ ต้องเรียก file_tool จริงๆ แล้วส่ง download_url ที่ได้มาให้พี่"
+
     return """
 คุณมี tools ต่อไปนี้ใช้งานได้:
 """ + "\n".join(tool_docs) + """
@@ -115,8 +124,8 @@ def build_tool_instructions(capabilities: list) -> str:
 {"tool": "ชื่อ_tool", "params": {...}}
 ```
 หลังได้ผล tool แล้ว วิเคราะห์และส่งผลงานต่อ
-ถ้าสร้างไฟล์ได้ให้บอก download URL ด้วย
-"""
+ถ้าสร้างไฟล์หรือรูปได้ให้ระบุ download_url ที่ได้จาก tool result ด้วย อย่าแต่งลิงก์เองเด็ดขาด
+""" + mandatory
 
 
 async def run_worker_with_tools(
