@@ -12,6 +12,7 @@ export default function Chat() {
   const [analyzingPaste, setAnalyzingPaste] = useState(false)
   const [editingRoom, setEditingRoom] = useState(null)
   const [editName, setEditName] = useState('')
+  const [proposalEdits, setProposalEdits] = useState({}) // msgIndex -> {workerIndex -> llm_model}
   const bottomRef = useRef(null)
   const inputRef = useRef(null)
   const wsRef = useRef(null)
@@ -142,9 +143,14 @@ export default function Chat() {
   }
 
   const approveTeam = async (proposal, msgIndex) => {
+    const edits = proposalEdits[msgIndex] || {}
+    const workers = proposal.workers.map((w, wi) => ({
+      ...w,
+      llm_model: edits[wi] || w.llm_model
+    }))
     const res = await fetch('/api/teams/approve', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ team_name: proposal.team_name, description: proposal.description, workers: proposal.workers })
+      body: JSON.stringify({ team_name: proposal.team_name, description: proposal.description, workers })
     })
     const data = await res.json()
     if (data.success) {
@@ -152,6 +158,18 @@ export default function Chat() {
       alert(`✅ สร้างทีม "${data.team_name}" แล้วค่ะ`)
     }
   }
+
+  const ALL_MODELS = [
+    { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+    { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+    { id: 'gemini-2.0-flash-lite', label: 'Gemini 2.0 Flash Lite' },
+    { id: 'gemini-2.5-flash-image', label: '🎨 Flash Image' },
+    { id: 'gemini-3.1-flash-image-preview', label: '🎨 Nano Banana 2' },
+    { id: 'gemini-3-pro-image-preview', label: '🎨 Nano Banana Pro' },
+    { id: 'meta-llama/Llama-3.3-70B-Instruct-Turbo', label: 'Llama 3.3 70B' },
+    { id: 'meta-llama/Llama-4-Scout-17B-16E-Instruct', label: 'Llama 4 Scout' },
+    { id: 'meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo', label: 'Llama 3.1 8B' },
+  ]
 
   const modelShort = (m) => {
     if (!m) return ''
@@ -233,18 +251,32 @@ export default function Chat() {
                     <div className="proposal-title">📋 เสนอทีม: {m.proposal.team_name}</div>
                     <p className="proposal-desc">{m.proposal.description}</p>
                     <div className="worker-list">
-                      {m.proposal.workers?.map((w, wi) => (
-                        <div key={wi} className="worker-row">
-                          <span className="worker-name">{w.name}</span>
-                          <span className="worker-role">{w.role}</span>
-                          <div className="worker-tags">
-                            <span className="model-tag">{modelShort(w.llm_model)}</span>
-                            {(w.capabilities || []).map((cap, ci) => (
-                              <span key={ci} className="cap-tag">{TOOL_ICONS[cap] || '🔧'} {cap.replace('_tool', '')}</span>
-                            ))}
+                      {m.proposal.workers?.map((w, wi) => {
+                        const currentModel = (proposalEdits[i] || {})[wi] || w.llm_model
+                        return (
+                          <div key={wi} className="worker-row">
+                            <span className="worker-name">{w.name}</span>
+                            <span className="worker-role">{w.role}</span>
+                            <div className="worker-tags">
+                              <select
+                                className="model-tag model-select"
+                                value={currentModel}
+                                onChange={e => setProposalEdits(prev => ({
+                                  ...prev,
+                                  [i]: { ...(prev[i] || {}), [wi]: e.target.value }
+                                }))}
+                              >
+                                {ALL_MODELS.map(opt => (
+                                  <option key={opt.id} value={opt.id}>{opt.label}</option>
+                                ))}
+                              </select>
+                              {(w.capabilities || []).map((cap, ci) => (
+                                <span key={ci} className="cap-tag">{TOOL_ICONS[cap] || '🔧'} {cap.replace('_tool', '')}</span>
+                              ))}
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        )
+                      })}
                     </div>
                     <button className="approve-btn" onClick={() => approveTeam(m.proposal, i)}>✅ Approve & สร้างทีม</button>
                   </div>

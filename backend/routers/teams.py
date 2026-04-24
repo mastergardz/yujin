@@ -135,3 +135,13 @@ async def update_worker(worker_id: str, data: WorkerUpdate, db: AsyncSession = D
         "llm_model": worker.llm_model,
         "capabilities": worker.capabilities or [],
     }
+
+@router.delete("/workers/{worker_id}")
+async def delete_worker(worker_id: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Worker).where(Worker.id == uuid.UUID(worker_id)))
+    worker = result.scalar_one_or_none()
+    if not worker:
+        raise HTTPException(status_code=404, detail="Worker not found")
+    await db.delete(worker)
+    await db.commit()
+    return {"success": True}

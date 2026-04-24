@@ -150,6 +150,13 @@ export default function Workspace({ team: initialTeam, onTeamUpdated }) {
     }
   }, [editingWorker])
 
+  const fireWorker = async (workerId, workerName) => {
+    if (!confirm(`ไล่ ${workerName} ออกจากทีม?`)) return
+    await fetch(`/api/teams/workers/${workerId}`, { method: 'DELETE' })
+    setTeam(prev => ({ ...prev, workers: prev.workers.filter(w => w.id !== workerId) }))
+    if (onTeamUpdated) onTeamUpdated()
+  }
+
   const updateWorkerModel = async (workerId, newModel) => {
     const res = await fetch(`/api/teams/workers/${workerId}`, {
       method: 'PATCH',
@@ -346,6 +353,11 @@ export default function Workspace({ team: initialTeam, onTeamUpdated }) {
                       {modelLabel} ✏️
                     </span>
                   )}
+                  <span
+                    onClick={e => { e.stopPropagation(); fireWorker(w.id, w.name) }}
+                    style={{marginLeft:'4px',cursor:'pointer',opacity:0.5,fontSize:'0.7rem',lineHeight:1}}
+                    title={`ไล่ ${w.name} ออก`}
+                  >✕</span>
                   {isEditing && (
                     <div style={{
                       position:'absolute', top:'100%', left:0, zIndex:100,
