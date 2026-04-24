@@ -149,39 +149,61 @@ async def file_tool(filename: str, content: str, file_type: str = "txt") -> dict
 
 
 # ============================================================
-# IMAGE TOOL
+# IMAGE TOOL — Gemini native image generation
+# Supports: gemini-2.5-flash-image, gemini-3.1-flash-image-preview, gemini-3-pro-image-preview
 # ============================================================
-async def image_tool(prompt: str, filename: str = "image") -> dict:
-    """Worker generates an image using Gemini Imagen"""
+IMAGE_MODELS = {
+    "fast": "gemini-2.5-flash-image",       # ถูก เร็ว
+    "preview": "gemini-3.1-flash-image-preview",  # Nano Banana 2
+    "pro": "gemini-3-pro-image-preview",     # Nano Banana Pro
+}
+DEFAULT_IMAGE_MODEL = "gemini-2.5-flash-image"
+
+async def image_tool(prompt: str, filename: str = "image", model: str = None) -> dict:
+    """Worker generates an image using Gemini native image generation"""
     from core.config import settings
     try:
-        import google.generativeai as genai
-        genai.configure(api_key=settings.gemini_api_key)
+        from google import genai
+        from google.genai import types
 
-        imagen_model = genai.ImageGenerationModel("imagen-3.0-generate-001")
-        result = imagen_model.generate_images(
-            prompt=prompt,
-            number_of_images=1,
-            safety_filter_level="block_only_high",
-            person_generation="allow_adult",
-            aspect_ratio="1:1",
+        client = genai.Client(api_key=settings.gemini_api_key)
+        model_id = model or DEFAULT_IMAGE_MODEL
+
+        response = client.models.generate_content(
+            model=model_id,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_modalities=["IMAGE", "TEXT"],
+            ),
         )
 
-        if result.images:
-            uid = str(uuid.uuid4())[:8]
-            safe_name = "".join(c for c in filename if c.isalnum() or c in "._- ").strip() or "image"
-            fname = f"{uid}_{safe_name}.png"
-            fpath = FILES_DIR / fname
-            result.images[0]._pil_image.save(str(fpath), "PNG")
-            return {
-                "success": True,
-                "filename": fname,
-                "path": str(fpath),
-                "download_url": f"/api/files/download/{fname}",
-                "image_url": f"/api/files/download/{fname}",
-            }
-        else:
-            return {"success": False, "error": "No image generated"}
+        image_data = None
+        for part in response.candidates[0].content.parts:
+            if part.inline_data and part.inline_data.mime_type.startswith("image/"):
+                image_data = part.inline_data.data
+                mime = part.inline_data.mime_type
+                break
+
+        if not image_data:
+            return {"success": False, "error": "No image in response"}
+
+        uid = str(uuid.uuid4())[:8]
+        safe_name = "".join(c for c in filename if c.isalnum() or c in "._- ").strip() or "image"
+        ext = "png" if "png" in mime else "jpg"
+        fname = f"{uid}_{safe_name}.{ext}"
+        fpath = FILES_DIR / fname
+
+        import base64
+        fpath.write_bytes(base64.b64decode(image_data) if isinstance(image_data, str) else image_data)
+
+        return {
+            "success": True,
+            "filename": fname,
+            "path": str(fpath),
+            "download_url": f"/api/files/download/{fname}",
+            "image_url": f"/api/files/download/{fname}",
+            "model_used": model_id,
+        }
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -207,7 +229,7 @@ TOOLS = {
     },
     "image_tool": {
         "fn": image_tool,
-        "description": "สร้างรูปด้วย Gemini Imagen",
-        "params": {"prompt": "str", "filename": "str (optional)"}
+        "description": "สร้างรูปด้วย Gemini image generation (gemini-2.5-flash-image, gemini-3.1-flash-image-preview, gemini-3-pro-image-preview)",
+        "params": {"prompt": "str", "filename": "str (optional)", "model": "gemini-2.5-flash-image|gemini-3.1-flash-image-preview|gemini-3-pro-image-preview (optional)"}
     },
 }

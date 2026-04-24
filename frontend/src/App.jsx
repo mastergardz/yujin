@@ -12,6 +12,9 @@ const MODEL_SHORT = {
   'meta-llama/Llama-3.3-70B-Instruct-Turbo': 'Llama 3.3 70B',
   'meta-llama/Llama-4-Scout-17B-16E-Instruct': 'Llama 4 Scout',
   'meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo': 'Llama 3.1 8B',
+  'gemini-2.5-flash-image': '🎨 Gemini 2.5 Flash Image',
+  'gemini-3.1-flash-image-preview': '🎨 Nano Banana 2',
+  'gemini-3-pro-image-preview': '🎨 Nano Banana Pro',
 }
 
 export default function App() {

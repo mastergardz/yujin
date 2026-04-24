@@ -47,9 +47,11 @@ export default function Settings() {
 
   if (!config) return <p style={{padding:'24px',color:'#888'}}>Loading...</p>
 
+  const textModels = config.available_models.filter(m => m.type !== 'image')
+  const imageModels = config.available_models.filter(m => m.type === 'image')
   const byProvider = PROVIDERS.map(p => ({
     ...p,
-    models: config.available_models.filter(m => m.provider === p.id)
+    models: textModels.filter(m => m.provider === p.id)
   }))
 
   return (
@@ -58,6 +60,7 @@ export default function Settings() {
 
       <div className="setting-section">
         <h3>🧠 สมองของ Yujin</h3>
+        <p style={{fontSize:'0.8rem',color:'#888',marginBottom:'12px'}}>เลือก model สำหรับ Yujin และ worker (เฉพาะ text model)</p>
         {byProvider.map(p => (
           <div key={p.id} className="provider-group">
             <div className="provider-label">{p.label}</div>
@@ -80,6 +83,26 @@ export default function Settings() {
         ))}
         <button onClick={saveModel} disabled={saving} style={{marginTop:'12px'}}>บันทึก</button>
       </div>
+
+      {imageModels.length > 0 && (
+        <div className="setting-section">
+          <h3>🎨 Image Generation Models</h3>
+          <p style={{fontSize:'0.8rem',color:'#888',marginBottom:'12px'}}>worker ที่มี <code>image_tool</code> จะใช้ model เหล่านี้สร้างรูป</p>
+          <div className="provider-group">
+            {imageModels.map(m => (
+              <div key={m.id} className="model-option" style={{cursor:'default'}}>
+                <div>
+                  <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
+                    <span>{m.name}</span>
+                    <code style={{fontSize:'0.7rem',background:'#f3e8ff',color:'#7c3aed',padding:'1px 6px',borderRadius:'6px'}}>{m.id}</code>
+                  </div>
+                  {m.description && <div className="model-desc">{m.description}</div>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="setting-section">
         <h3>🔑 API Keys</h3>

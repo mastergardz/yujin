@@ -155,9 +155,12 @@ export default function Chat() {
 
   const modelShort = (m) => {
     if (!m) return ''
+    if (m === 'gemini-3-pro-image-preview') return '🎨 Nano Banana Pro'
+    if (m === 'gemini-3.1-flash-image-preview') return '🎨 Nano Banana 2'
+    if (m === 'gemini-2.5-flash-image') return '🎨 Flash Image'
     if (m.includes('gemini-2.5-pro')) return 'Gemini 2.5 Pro'
-    if (m.includes('gemini-2.5-flash')) return 'Gemini 2.5 Flash'
     if (m.includes('gemini-2.5-flash-8b')) return 'Gemini 2.5 Flash-8B'
+    if (m.includes('gemini-2.5-flash')) return 'Gemini 2.5 Flash'
     if (m.includes('Llama-3.3-70B')) return 'Llama 3.3 70B'
     if (m.includes('Llama-4-Scout')) return 'Llama 4 Scout'
     if (m.includes('Llama-3.1-8B')) return 'Llama 3.1 8B'
