@@ -70,7 +70,10 @@ export default function Settings() {
                   checked={selectedModel === m.id}
                   onChange={() => setSelectedModel(m.id)}
                 />
-                {m.name}
+                <div>
+                  <div>{m.name}</div>
+                  {m.description && <div className="model-desc">{m.description}</div>}
+                </div>
               </label>
             ))}
           </div>

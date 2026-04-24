@@ -88,3 +88,5 @@ main { flex: 1; overflow: hidden; }
 .key-row { margin-bottom: 16px; }
 .key-label { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; color: #888; font-size: 0.85rem; }
 .key-label code { background: #0f0f1e; padding: 2px 8px; border-radius: 4px; color: #7dcc7d; }
+.model-desc { font-size: 0.75rem; color: #666; margin-top: 2px; font-weight: normal; }
+.model-option.selected .model-desc { color: #9da3fd; }
