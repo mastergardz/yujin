@@ -37,8 +37,8 @@ export default function Workspace({ team }) {
     setRunning(true)
   }
 
-  const senderColor = (type) => type === 'yujin' ? '#a78bfa' : '#6ee7b7'
-  const senderBg = (type) => type === 'yujin' ? '#1e1b3a' : '#0f1f1a'
+  const senderColor = (type) => type === 'yujin' ? '#7c3aed' : '#059669'
+  const senderBg = (type) => 'white'
 
   return (
     <div className="workspace">

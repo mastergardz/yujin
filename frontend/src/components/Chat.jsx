@@ -50,6 +50,13 @@ export default function Chat() {
     inputRef.current?.focus()
   }, [activeRoom])
 
+  // auto-reconnect
+  useEffect(() => {
+    if (connected || !activeRoom) return
+    const t = setTimeout(() => connectWs(activeRoom.id), 3000)
+    return () => clearTimeout(t)
+  }, [connected, activeRoom])
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, pending])
