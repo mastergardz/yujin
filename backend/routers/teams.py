@@ -26,6 +26,19 @@ def normalize_model_id(model_id: str) -> str:
     return model_id if model_id in VALID_MODEL_IDS else "gemini-2.5-flash"
 
 VALID_TOOLS = {"shell_tool", "db_tool", "file_tool", "image_tool"}
+IMAGE_MODELS = {m["id"] for m in AVAILABLE_MODELS if m.get("type") == "image"}
+TEXT_MODELS = {m["id"] for m in AVAILABLE_MODELS if m.get("type") != "image"}
+DEFAULT_IMAGE_MODEL = "gemini-2.5-flash-image"
+
+def enforce_model_capability(model_id: str, capabilities: list) -> str:
+    """ถ้า worker มี image_tool ต้องใช้ image model เท่านั้น"""
+    if "image_tool" in capabilities:
+        if model_id not in IMAGE_MODELS:
+            return DEFAULT_IMAGE_MODEL
+    else:
+        if model_id in IMAGE_MODELS:
+            return "gemini-2.5-flash"
+    return model_id
 
 class WorkerCreate(BaseModel):
     name: str
@@ -71,11 +84,12 @@ async def approve_team(data: TeamApprove, db: AsyncSession = Depends(get_db)):
 
     for w in data.workers:
         caps = [c for c in (w.capabilities or []) if c in VALID_TOOLS]
+        model = enforce_model_capability(normalize_model_id(w.llm_model), caps)
         worker = Worker(
             team_id=team.id,
             name=w.name,
             role=w.role,
-            llm_model=normalize_model_id(w.llm_model),
+            llm_model=model,
             capabilities=caps
         )
         db.add(worker)
@@ -103,10 +117,16 @@ async def update_worker(worker_id: str, data: WorkerUpdate, db: AsyncSession = D
     worker = result.scalar_one_or_none()
     if not worker:
         raise HTTPException(status_code=404, detail="Worker not found")
-    if data.llm_model is not None:
-        worker.llm_model = normalize_model_id(data.llm_model)
     if data.capabilities is not None:
         worker.capabilities = [c for c in data.capabilities if c in VALID_TOOLS]
+    if data.llm_model is not None:
+        worker.llm_model = enforce_model_capability(
+            normalize_model_id(data.llm_model),
+            worker.capabilities or []
+        )
+    elif data.capabilities is not None:
+        # capabilities เปลี่ยน ต้องตรวจ model ด้วย
+        worker.llm_model = enforce_model_capability(worker.llm_model or "gemini-2.5-flash", worker.capabilities or [])
     await db.commit()
     return {
         "success": True,
