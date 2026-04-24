@@ -74,7 +74,7 @@ export default function Workspace({ team }) {
         ))}
         {running && (
           <div className="ws-msg" style={{background: '#1e1b3a'}}>
-            <div className="ws-sender" style={{color: '#a78bfa'}}>🤖 Yujin</div>
+            <div className="ws-sender" style={{color: '#a78bfa', display:'flex', alignItems:'center', gap:'6px'}}><YujinAvatar size={18} /> Yujin</div>
             <div className="bubble typing"><span/><span/><span/></div>
           </div>
         )}

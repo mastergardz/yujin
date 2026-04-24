@@ -173,7 +173,7 @@ export default function Chat() {
         <div className="messages">
           {messages.length === 0 && (
             <div className="empty-chat">
-              <div className="empty-icon">🤖</div>
+              <YujinAvatar size={56} />
               <div>สวัสดีค่ะ พี่การ์ด<br/>สั่งงาน Yujin ได้เลยค่ะ</div>
             </div>
           )}

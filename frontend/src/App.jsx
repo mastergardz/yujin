@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import Chat from './components/Chat'
+import YujinAvatar from './components/YujinAvatar'
 import Teams from './components/Teams'
 import Settings from './components/Settings'
 import './App.css'
@@ -11,7 +12,7 @@ export default function App() {
     <div className="app">
       <aside className="sidebar">
         <div className="sidebar-logo">
-          <span className="logo-icon">🤖</span>
+          <YujinAvatar size={36} />
           <div>
             <div className="logo-name">Yujin</div>
             <div className="logo-sub">AI Secretary</div>
