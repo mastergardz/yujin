@@ -39,7 +39,7 @@ export default function App() {
             <span>💬</span> Chat
           </button>
           <button className={tab === 'teams' ? 'active' : ''} onClick={() => setTab('teams')}>
-            <span>👥</span> Teams
+            <span>👥</span> Workspace
           </button>
           <button className={tab === 'settings' ? 'active' : ''} onClick={() => setTab('settings')}>
             <span>⚙️</span> Settings
