@@ -4,6 +4,7 @@ import YujinAvatar from './components/YujinAvatar'
 import Teams from './components/Teams'
 import Settings from './components/Settings'
 import Skills from './components/Skills'
+import WorkerLibrary from './components/WorkerLibrary'
 import './App.css'
 
 const MODEL_SHORT = {
@@ -45,6 +46,9 @@ export default function App() {
           <button className={tab === 'teams' ? 'active' : ''} onClick={() => setTab('teams')}>
             <span>👥</span> Workspace
           </button>
+          <button className={tab === 'workers' ? 'active' : ''} onClick={() => setTab('workers')}>
+            <span>👤</span> Workers
+          </button>
           <button className={tab === 'skills' ? 'active' : ''} onClick={() => setTab('skills')}>
             <span>📚</span> Skills
           </button>
@@ -56,6 +60,7 @@ export default function App() {
       <main className="main-content">
         {tab === 'chat' && <Chat />}
         {tab === 'teams' && <Teams />}
+        {tab === 'workers' && <WorkerLibrary />}
         {tab === 'skills' && <Skills />}
         {tab === 'settings' && <Settings />}
       </main>

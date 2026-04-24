@@ -32,6 +32,20 @@ class Worker(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     team = relationship("Team", back_populates="workers")
 
+class WorkerTemplate(Base):
+    __tablename__ = "yujin_worker_templates"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String(100), nullable=False)
+    role = Column(String(200))
+    llm_model = Column(String(100), default="gemini-2.5-flash")
+    capabilities = Column(JSON, default=list)
+    avatar = Column(Text, nullable=True)
+    personality = Column(Text, nullable=True)
+    speech_style = Column(Text, nullable=True)
+    skills = Column(JSON, default=list)
+    system_prompt = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
 class ChatMessage(Base):
     __tablename__ = "yujin_chat_messages"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
