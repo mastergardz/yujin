@@ -128,6 +128,9 @@ def build_tool_instructions(capabilities: list) -> str:
 """ + mandatory
 
 
+IMAGE_MODEL_IDS = {"gemini-2.5-flash-image", "gemini-3.1-flash-image-preview", "gemini-3-pro-image-preview"}
+
+
 async def run_worker_with_tools(
     worker: Worker,
     worker_task: str,
@@ -138,8 +141,26 @@ async def run_worker_with_tools(
     db: AsyncSession = None,
 ) -> str:
     """Run a single worker, with tool-use loop support"""
-    
+
     capabilities = getattr(worker, 'capabilities', None) or []
+
+    # Image model workers: skip LLM loop, call image_tool directly with task as prompt
+    if worker.llm_model in IMAGE_MODEL_IDS and "image_tool" in capabilities:
+        if broadcast_typing_fn:
+            await broadcast_typing_fn(worker.name, "worker")
+        if broadcast_fn:
+            await broadcast_fn(worker.name, "worker", "🔧 กำลังใช้ `image_tool`...")
+        tool_result = await image_tool(
+            prompt=worker_task,
+            filename="image",
+            model=worker.llm_model,
+            db=db,
+        )
+        if tool_result.get("success") and tool_result.get("download_url"):
+            img_url = tool_result["download_url"]
+            return "สร้างรูปเสร็จแล้วค่ะ\n![ภาพที่สร้าง](" + img_url + ")"
+        return "ขออภัยค่ะ สร้างรูปไม่สำเร็จ: " + tool_result.get("error", "unknown error")
+
     tool_instructions = build_tool_instructions(capabilities)
     
     # extra mandate ถ้า worker มี image_tool — ต้อง call tool จริงทุกครั้งที่งานเกี่ยวกับรูป
