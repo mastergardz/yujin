@@ -51,3 +51,11 @@ class Room(Base):
     name = Column(String(100), nullable=False, default="ห้องใหม่")
     created_at = Column(DateTime, default=datetime.utcnow)
     messages = relationship("ChatMessage", back_populates="room", cascade="all, delete-orphan")
+class WorkspaceMessage(Base):
+    __tablename__ = "yujin_workspace_messages"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    team_id = Column(UUID(as_uuid=True), ForeignKey("yujin_teams.id", ondelete="CASCADE"), nullable=False)
+    sender = Column(String(100), nullable=False)
+    sender_type = Column(String(20), nullable=False)  # yujin, worker
+    content = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)

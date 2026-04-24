@@ -247,3 +247,35 @@ body { background: #0d0d14; color: #e0e0e0; font-family: 'Segoe UI', -apple-syst
 .setting-section button:disabled { background: #2a2a4a; color: #555; cursor: not-allowed; }
 .note { color: #444; font-size: 0.8rem; margin-top: 10px; }
 .note a { color: #a78bfa; }
+
+/* ===== WORKSPACE ===== */
+.workspace { display: flex; flex-direction: column; height: 100vh; }
+.workspace-header {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  padding: 16px 24px; border-bottom: 1px solid #1e1e2e; background: #0d0d14;
+}
+.workspace-title { font-size: 1rem; font-weight: 600; color: #e0e0e0; margin-bottom: 6px; }
+.workspace-workers { display: flex; flex-wrap: wrap; gap: 6px; }
+.worker-chip {
+  background: #1e1b3a; color: #a78bfa; font-size: 0.7rem;
+  padding: 2px 10px; border-radius: 10px; border: 1px solid #2a2a5a;
+}
+.workspace-messages {
+  flex: 1; overflow-y: auto; padding: 20px 24px; display: flex; flex-direction: column; gap: 12px;
+  scrollbar-width: thin; scrollbar-color: #2a2a4a transparent;
+}
+.ws-msg { border-radius: 10px; padding: 12px 16px; border: 1px solid #1e1e2e; }
+.ws-sender { font-size: 0.8rem; font-weight: 600; margin-bottom: 6px; }
+.ws-content { font-size: 0.875rem; line-height: 1.6; color: #ccc; white-space: pre-wrap; }
+.ws-time { font-size: 0.7rem; color: #444; margin-top: 6px; }
+.workspace-input {
+  display: flex; gap: 10px; align-items: flex-end;
+  padding: 16px 24px 20px; border-top: 1px solid #1e1e2e; background: #0d0d14;
+}
+.workspace-input textarea {
+  flex: 1; background: #111119; border: 1px solid #2a2a4a; color: #e0e0e0;
+  padding: 12px 16px; border-radius: 12px; font-size: 0.9rem; outline: none;
+  resize: none; line-height: 1.5; font-family: inherit; transition: border-color 0.15s;
+}
+.workspace-input textarea:focus { border-color: #a78bfa; }
+.workspace-input textarea:disabled { opacity: 0.4; }
