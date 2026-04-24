@@ -150,12 +150,25 @@ async def run_worker_with_tools(
             await broadcast_typing_fn(worker.name, "worker")
         if broadcast_fn:
             await broadcast_fn(worker.name, "worker", "🔧 กำลังใช้ `image_tool`...")
-        tool_result = await image_tool(
-            prompt=worker_task,
-            filename="image",
-            model=worker.llm_model,
-            db=db,
-        )
+
+        # keep worker typing bubble alive while image generates
+        async def keep_typing():
+            while True:
+                await asyncio.sleep(3)
+                if broadcast_typing_fn:
+                    await broadcast_typing_fn(worker.name, "worker")
+
+        typing_task = asyncio.create_task(keep_typing())
+        try:
+            tool_result = await image_tool(
+                prompt=worker_task,
+                filename="image",
+                model=worker.llm_model,
+                db=db,
+            )
+        finally:
+            typing_task.cancel()
+
         if tool_result.get("success") and tool_result.get("download_url"):
             img_url = tool_result["download_url"]
             return "สร้างรูปเสร็จแล้วค่ะ\n![ภาพที่สร้าง](" + img_url + ")"
