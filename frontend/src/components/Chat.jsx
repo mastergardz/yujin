@@ -164,6 +164,13 @@ export default function Chat() {
     return m.split('/').pop()
   }
 
+  const TOOL_ICONS = {
+    shell_tool: '💻',
+    db_tool: '🗄️',
+    file_tool: '📄',
+    image_tool: '🎨',
+  }
+
   return (
     <div className="chat-layout">
       <div className="room-sidebar">
@@ -227,7 +234,12 @@ export default function Chat() {
                         <div key={wi} className="worker-row">
                           <span className="worker-name">{w.name}</span>
                           <span className="worker-role">{w.role}</span>
-                          <span className="model-tag">{modelShort(w.llm_model)}</span>
+                          <div className="worker-tags">
+                            <span className="model-tag">{modelShort(w.llm_model)}</span>
+                            {(w.capabilities || []).map((cap, ci) => (
+                              <span key={ci} className="cap-tag">{TOOL_ICONS[cap] || '🔧'} {cap.replace('_tool', '')}</span>
+                            ))}
+                          </div>
                         </div>
                       ))}
                     </div>

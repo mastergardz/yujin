@@ -19,6 +19,31 @@ const MODEL_SHORT = {
   'meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo': 'Llama 3.1 8B',
 }
 
+function WsContent({ content }) {
+  if (!content) return null
+  const parts = content.split(/(\[.*?\]\(\/api\/files\/download\/[^\)]+\))/g)
+  return (
+    <span style={{whiteSpace:'pre-wrap',wordBreak:'break-word'}}>
+      {parts.map((part, i) => {
+        const match = part.match(/^\[(.*?)\]\((\/api\/files\/download\/[^\)]+)\)$/)
+        if (match) {
+          const label = match[1]
+          const url = match[2]
+          const isImage = /\.(png|jpg|jpeg|gif|webp)$/i.test(url)
+          if (isImage) return (
+            <span key={i} style={{display:'block',margin:'6px 0'}}>
+              <img src={url} style={{maxWidth:'100%',maxHeight:300,borderRadius:8,display:'block',marginBottom:4}} alt={label} />
+              <a href={url} download style={{fontSize:'0.75rem',color:'#7c3aed'}}>⬇️ {label}</a>
+            </span>
+          )
+          return <a key={i} href={url} download style={{color:'#7c3aed',textDecoration:'underline'}}>📎 {label}</a>
+        }
+        return <span key={i}>{part}</span>
+      })}
+    </span>
+  )
+}
+
 function getWorkerColor(name, workerNames) {
   const idx = workerNames.indexOf(name)
   return WORKER_COLORS[idx % WORKER_COLORS.length]
@@ -163,6 +188,11 @@ export default function Workspace({ team }) {
                 <span key={w.id} className="worker-chip" style={{background:color.bg,color:color.text,border:`1px solid ${color.border}`}}>
                   <span>{w.name} — {w.role}</span>
                   {modelLabel && <span style={{display:'block',fontSize:'0.65rem',opacity:0.7,marginTop:'1px',fontWeight:400}}>{modelLabel}</span>}
+                  {(w.capabilities || []).length > 0 && (
+                    <span style={{display:'block',fontSize:'0.6rem',opacity:0.65,marginTop:'2px'}}>
+                      {(w.capabilities || []).map(c => ({'shell_tool':'💻','db_tool':'🗄️','file_tool':'📄','image_tool':'🎨'}[c] || '🔧')).join(' ')}
+                    </span>
+                  )}
                 </span>
               )
             })}
@@ -195,7 +225,7 @@ export default function Workspace({ team }) {
               </div>
               <div className="ws-content">
                 {m.image && <img src={m.image} style={{maxWidth:'100%',maxHeight:200,borderRadius:8,marginBottom:m.content?6:0,display:'block'}} alt="รูปแนบ" />}
-                {m.content}
+                <WsContent content={m.content} />
               </div>
             </div>
           )

@@ -13,7 +13,6 @@ router = APIRouter(prefix="/api/teams", tags=["teams"])
 VALID_MODEL_IDS = {m["id"] for m in AVAILABLE_MODELS}
 
 def normalize_model_id(model_id: str) -> str:
-    """Fix common Yujin mistakes — short names to full IDs"""
     if not model_id or model_id in VALID_MODEL_IDS:
         return model_id
     lower = model_id.lower()
@@ -26,10 +25,13 @@ def normalize_model_id(model_id: str) -> str:
             return "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo"
     return model_id if model_id in VALID_MODEL_IDS else "gemini-2.5-flash"
 
+VALID_TOOLS = {"shell_tool", "db_tool", "file_tool", "image_tool"}
+
 class WorkerCreate(BaseModel):
     name: str
     role: str
     llm_model: str = "gemini-2.5-flash"
+    capabilities: Optional[List[str]] = []
 
 class TeamApprove(BaseModel):
     team_name: str
@@ -48,8 +50,11 @@ async def get_teams(db: AsyncSession = Depends(get_db)):
             "id": str(t.id), "name": t.name, "description": t.description,
             "status": t.status, "llm_model": t.llm_model,
             "created_at": t.created_at.isoformat(),
-            "workers": [{"id": str(w.id), "name": w.name, "role": w.role,
-                         "llm_model": w.llm_model, "status": w.status} for w in workers]
+            "workers": [{
+                "id": str(w.id), "name": w.name, "role": w.role,
+                "llm_model": w.llm_model, "status": w.status,
+                "capabilities": w.capabilities or []
+            } for w in workers]
         })
     return response
 
@@ -65,11 +70,13 @@ async def approve_team(data: TeamApprove, db: AsyncSession = Depends(get_db)):
     await db.flush()
 
     for w in data.workers:
+        caps = [c for c in (w.capabilities or []) if c in VALID_TOOLS]
         worker = Worker(
             team_id=team.id,
             name=w.name,
             role=w.role,
-            llm_model=normalize_model_id(w.llm_model)
+            llm_model=normalize_model_id(w.llm_model),
+            capabilities=caps
         )
         db.add(worker)
 

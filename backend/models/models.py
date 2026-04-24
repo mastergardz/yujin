@@ -24,6 +24,7 @@ class Worker(Base):
     system_prompt = Column(Text)
     llm_model = Column(String(100))
     status = Column(String(20), default="idle")
+    capabilities = Column(JSON, default=list)
     created_at = Column(DateTime, default=datetime.utcnow)
     team = relationship("Team", back_populates="workers")
 

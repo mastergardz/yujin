@@ -1,8 +1,10 @@
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from core.database import get_db
 from services.llm import get_keys
-import base64, mimetypes
+from pathlib import Path
+import base64, mimetypes, re
 
 router = APIRouter(prefix="/api/files", tags=["files"])
 
@@ -14,6 +16,9 @@ ALLOWED_TYPES = {
 }
 
 MAX_SIZE = 20 * 1024 * 1024  # 20MB
+FILES_DIR = Path("/root/yujin/backend/generated_files")
+FILES_DIR.mkdir(exist_ok=True)
+
 
 @router.post("/analyze")
 async def analyze_file(file: UploadFile = File(...), db: AsyncSession = Depends(get_db)):
@@ -33,7 +38,6 @@ async def analyze_file(file: UploadFile = File(...), db: AsyncSession = Depends(
 
     if mime.startswith("image/"):
         prompt = "วิเคราะห์รูปภาพนี้อย่างละเอียด บอกว่ามีอะไรในรูป ข้อความ ตัวเลข กราฟ หรือข้อมูลสำคัญอะไรบ้าง ตอบเป็นภาษาไทย"
-        b64 = base64.b64encode(content).decode()
         response = client.models.generate_content(
             model="gemini-2.5-flash",
             contents=[
@@ -51,10 +55,9 @@ async def analyze_file(file: UploadFile = File(...), db: AsyncSession = Depends(
             ]
         )
     else:
-        # text-based files
         try:
             text_content = content.decode("utf-8")
-        except:
+        except Exception:
             text_content = content.decode("latin-1")
         prompt = f"อ่านและสรุปเนื้อหาของไฟล์นี้อย่างละเอียด:\n\n{text_content[:50000]}"
         response = client.models.generate_content(
@@ -68,3 +71,23 @@ async def analyze_file(file: UploadFile = File(...), db: AsyncSession = Depends(
         "size": len(content),
         "analysis": response.text
     }
+
+
+@router.get("/download/{filename}")
+async def download_file(filename: str):
+    """Serve generated files for download"""
+    # Security: only allow safe filenames, no path traversal
+    safe = re.sub(r'[^a-zA-Z0-9._\- ]', '', filename)
+    if safe != filename or ".." in filename:
+        raise HTTPException(400, "Invalid filename")
+    
+    fpath = FILES_DIR / filename
+    if not fpath.exists():
+        raise HTTPException(404, "ไม่พบไฟล์ค่ะ")
+    
+    media_type, _ = mimetypes.guess_type(str(fpath))
+    return FileResponse(
+        path=str(fpath),
+        filename=filename,
+        media_type=media_type or "application/octet-stream"
+    )

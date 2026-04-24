@@ -1,5 +1,7 @@
 import json
+import re
 from services.llm import call_llm_with_usage
+from services.worker_tools import TOOLS, shell_tool, db_tool, file_tool, image_tool
 from models.models import WorkspaceMessage, Worker, Team
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -12,15 +14,12 @@ async def save_ws_msg(db: AsyncSession, team_id, sender: str, sender_type: str, 
     return msg
 
 def format_cost_summary(usage_list: list) -> str:
-    """สร้าง cost summary จาก usage records"""
     if not usage_list:
         return ""
-    
     total_input = sum(u["input_tokens"] for u in usage_list)
     total_output = sum(u["output_tokens"] for u in usage_list)
     total_cost = sum(u["cost_usd"] for u in usage_list)
-    
-    # จัดกลุ่มตาม model
+
     by_model = {}
     for u in usage_list:
         m = u["model"]
@@ -30,33 +29,156 @@ def format_cost_summary(usage_list: list) -> str:
         by_model[m]["output"] += u["output_tokens"]
         by_model[m]["cost"] += u["cost_usd"]
         by_model[m]["calls"] += 1
-    
-    # ย่อชื่อ model
+
     MODEL_SHORT = {
         "gemini-2.5-flash": "Gemini 2.5 Flash",
         "gemini-2.5-pro": "Gemini 2.5 Pro",
-        "gemini-2.0-flash-lite": "Gemini 2.0 Lite",
+        "gemini-2.5-flash-8b": "Gemini 2.5 Flash-8B",
         "meta-llama/Llama-3.3-70B-Instruct-Turbo": "Llama 3.3 70B",
         "meta-llama/Llama-4-Scout-17B-16E-Instruct": "Llama 4 Scout",
         "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo": "Llama 3.1 8B",
     }
-    
+
     lines = ["---", "💰 **ค่าใช้จ่าย API งานนี้**"]
     for model_id, data in by_model.items():
         name = MODEL_SHORT.get(model_id, model_id.split("/")[-1])
-        cost_thb = data["cost"] * 35  # USD to THB approx
+        cost_thb = data["cost"] * 35
         lines.append(f"• {name}: {data['input']:,}+{data['output']:,} tokens = ${data['cost']:.5f} (~฿{cost_thb:.3f})")
-    
+
     total_thb = total_cost * 35
     lines.append(f"**รวม: ${total_cost:.5f} (~฿{total_thb:.3f})** | {total_input+total_output:,} tokens")
-    
     return "\n".join(lines)
 
+
+def parse_tool_call(text: str) -> tuple[str, dict] | None:
+    """Parse JSON tool_call block from LLM response"""
+    patterns = [
+        r'```tool_call\s*([\s\S]*?)```',
+        r'<tool_call>([\s\S]*?)</tool_call>',
+        r'\{"tool":\s*"(\w+)"[^}]*\}',
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text)
+        if match:
+            try:
+                blob = match.group(1) if '```' in pattern or '<' in pattern else match.group(0)
+                data = json.loads(blob)
+                if "tool" in data:
+                    return data["tool"], data.get("params", data.get("args", {}))
+            except Exception:
+                pass
+    return None
+
+
+def build_tool_instructions(capabilities: list) -> str:
+    """Build tool-use instructions block for worker system prompt"""
+    if not capabilities:
+        return ""
+    
+    tool_docs = []
+    for cap in capabilities:
+        if cap in TOOLS:
+            t = TOOLS[cap]
+            tool_docs.append(f'- **{cap}**: {t["description"]}\n  params: {json.dumps(t["params"], ensure_ascii=False)}')
+    
+    if not tool_docs:
+        return ""
+    
+    return """
+คุณมี tools ต่อไปนี้ใช้งานได้:
+""" + "\n".join(tool_docs) + """
+
+วิธีใช้ tool: ตอบด้วย JSON block นี้ (ใส่ใน ```tool_call ... ```) แล้วรอผลลัพธ์:
+```tool_call
+{"tool": "ชื่อ_tool", "params": {...}}
+```
+หลังได้ผล tool แล้ว วิเคราะห์และส่งผลงานต่อ
+ถ้าสร้างไฟล์ได้ให้บอก download URL ด้วย
+"""
+
+
+async def run_worker_with_tools(
+    worker: Worker,
+    worker_task: str,
+    big_task: str,
+    usage_log: list,
+    broadcast_fn=None,
+    broadcast_typing_fn=None,
+    db: AsyncSession = None,
+) -> str:
+    """Run a single worker, with tool-use loop support"""
+    
+    capabilities = getattr(worker, 'capabilities', None) or []
+    tool_instructions = build_tool_instructions(capabilities)
+    
+    system_prompt = (
+        f"คุณชื่อ {worker.name} เป็นผู้หญิง ทำหน้าที่ {worker.role} "
+        f"บุคลิก: สุภาพ ฉลาด ทำงานเป็น เรียกตัวเองว่าหนู ใช้คำลงท้าย คะ ค่ะ ขา ค่า จ๊ะ "
+        f"ส่งผลงานจริงๆ ไม่ใช่อธิบายว่าจะทำอะไร"
+        + (f"\n{worker.system_prompt}" if worker.system_prompt else "")
+        + tool_instructions
+    )
+    
+    user_prompt = (
+        f"บทบาทของคุณ: {worker.role}\n"
+        f"งานที่ได้รับ: {worker_task}\n"
+        f"บริบท: เป็นส่วนหนึ่งของงานใหญ่: {big_task}\n\n"
+        f"สำคัญมาก: ส่งมอบผลงานจริงๆ เลย อย่าแค่บอกว่าจะทำอะไร"
+    )
+
+    history = [{"role": "user", "content": user_prompt}]
+    final_reply = ""
+
+    for _iteration in range(5):  # max 5 tool-call rounds
+        await broadcast_typing_fn(worker.name, "worker")
+        
+        resp, usage = await call_llm_with_usage(
+            history[-1]["content"] if len(history) == 1 else json.dumps(history),
+            system_prompt,
+            model=worker.llm_model,
+            db=db
+        )
+        usage_log.append(usage)
+
+        tool_call = parse_tool_call(resp)
+        if not tool_call:
+            final_reply = resp
+            break
+
+        tool_name, params = tool_call
+        
+        # Show worker thinking + calling tool
+        clean_resp = re.sub(r'```tool_call[\s\S]*?```', '', resp).strip()
+        if clean_resp:
+            if broadcast_fn:
+                await broadcast_fn(worker.name, "worker", clean_resp)
+
+        if broadcast_fn:
+            await broadcast_fn(worker.name, "worker", f"🔧 กำลังใช้ `{tool_name}`...")
+
+        # Execute tool
+        tool_result = {"error": f"ไม่รู้จัก tool: {tool_name}"}
+        if tool_name == "shell_tool":
+            tool_result = await shell_tool(**params)
+        elif tool_name == "db_tool":
+            tool_result = await db_tool(**params)
+        elif tool_name == "file_tool":
+            tool_result = await file_tool(**params)
+        elif tool_name == "image_tool":
+            tool_result = await image_tool(**params)
+
+        result_str = json.dumps(tool_result, ensure_ascii=False)
+        history.append({"role": "assistant", "content": resp})
+        history.append({"role": "user", "content": f"ผลลัพธ์จาก {tool_name}:\n{result_str}\n\nสรุปและส่งผลงานให้พี่เลยค่ะ"})
+        final_reply = f"[ผลจาก {tool_name}]\n{result_str}"
+
+    return final_reply or resp
+
+
 async def run_team_task(task: str, team_id, db: AsyncSession, broadcast_fn=None):
-    """Yujin สั่งงาน workers แล้ว broadcast ผ่าน websocket"""
     import uuid
 
-    usage_log = []  # track all API calls
+    usage_log = []
 
     team_result = await db.execute(select(Team).where(Team.id == uuid.UUID(str(team_id))))
     team = team_result.scalar_one_or_none()
@@ -85,7 +207,13 @@ async def run_team_task(task: str, team_id, db: AsyncSession, broadcast_fn=None)
                 "sender_type": sender_type
             })
 
-    workers_info = "\n".join([f"- {w.name}: {w.role}" for w in workers])
+    async def broadcast_msg(sender, sender_type, content):
+        await broadcast(sender, sender_type, content)
+
+    workers_info = "\n".join([
+        f"- {w.name}: {w.role}" + (f" [tools: {', '.join(getattr(w, 'capabilities', None) or [])}]" if getattr(w, 'capabilities', None) else "")
+        for w in workers
+    ])
     plan_prompt = f"""งานที่ได้รับ: {task}
 
 ทีมงาน:
@@ -99,14 +227,19 @@ async def run_team_task(task: str, team_id, db: AsyncSession, broadcast_fn=None)
   ]
 }}"""
 
-    plan_text, usage = await call_llm_with_usage(plan_prompt, "คุณคือ Yujin เลขา AI ผู้หญิง กำลังมอบหมายงานให้ทีม เรียกชื่อ worker โดยตรง ตอบเป็น JSON เท่านั้น", db=db)
+    await broadcast_typing("Yujin", "yujin")
+    plan_text, usage = await call_llm_with_usage(
+        plan_prompt,
+        "คุณคือ Yujin เลขา AI ผู้หญิง กำลังมอบหมายงานให้ทีม เรียกชื่อ worker โดยตรง ตอบเป็น JSON เท่านั้น",
+        db=db
+    )
     usage_log.append(usage)
 
     try:
         start = plan_text.index("{")
         end = plan_text.rindex("}") + 1
         plan = json.loads(plan_text[start:end])
-    except:
+    except Exception:
         plan = {"summary": plan_text, "assignments": [{"worker": workers[0].name if workers else "Worker", "task": task}]}
 
     await broadcast("Yujin", "yujin", f"รับงานแล้วค่ะ — {plan.get('summary', task)}\n\nกำลังมอบหมายงานให้ทีม...")
@@ -121,23 +254,16 @@ async def run_team_task(task: str, team_id, db: AsyncSession, broadcast_fn=None)
             continue
 
         await broadcast("Yujin", "yujin", f"@{worker_name} — {worker_task}")
-        await broadcast_typing(worker_name, "worker")
 
-        worker_prompt = f"""บทบาทของคุณ: {worker.role}
-งานที่ได้รับ: {worker_task}
-บริบท: เป็นส่วนหนึ่งของงานใหญ่: {task}
-
-สำคัญมาก: ส่งมอบผลงานจริงๆ เลย อย่าแค่บอกว่าจะทำอะไร
-ถ้างานคือเขียนบทความ → เขียนบทความให้เลย
-ถ้างานคือวิจัย → ส่งข้อมูลที่ค้นพบมาเลย
-ถ้างานคือออกแบบ → ส่งผลงานที่ออกแบบมาเลย"""
-
-        worker_result, usage = await call_llm_with_usage(
-            worker_prompt,
-            f"คุณชื่อ {worker_name} เป็นผู้หญิง ทำหน้าที่ {worker.role} บุคลิก: สุภาพ ฉลาด ทำงานเป็น เรียกตัวเองว่าหนู ใช้คำลงท้าย คะ ค่ะ ขา ค่า จ๊ะ ส่งผลงานจริงๆ ไม่ใช่อธิบายว่าจะทำอะไร",
-            model=worker.llm_model, db=db
+        worker_result = await run_worker_with_tools(
+            worker=worker,
+            worker_task=worker_task,
+            big_task=task,
+            usage_log=usage_log,
+            broadcast_fn=broadcast_msg,
+            broadcast_typing_fn=broadcast_typing,
+            db=db,
         )
-        usage_log.append(usage)
         await broadcast(worker_name, "worker", worker_result)
         results.append({"worker": worker_name, "result": worker_result})
 
@@ -150,7 +276,8 @@ async def run_team_task(task: str, team_id, db: AsyncSession, broadcast_fn=None)
 
 ตอนนี้ส่งงานให้พี่เลย — ขึ้นต้นว่า "ส่งงานค่ะ พี่" หรือ "พี่คะ งานเสร็จแล้วค่ะ" แล้วนำเสนอผลงานจริงๆ จากทีม
 ถ้าทีมเขียนบทความมา ให้คัดเอาบทความที่ดีที่สุดมาส่งเลย ไม่ต้องสรุปว่าใครทำอะไร
-เน้นส่งเนื้อหาจริงๆ ที่พี่ใช้งานได้เลย"""
+เน้นส่งเนื้อหาจริงๆ ที่พี่ใช้งานได้เลย
+ถ้ามี download URL ในผลงาน ให้ระบุให้ชัดเจนด้วยค่ะ"""
 
         await broadcast_typing("Yujin", "yujin")
         final, usage = await call_llm_with_usage(
@@ -159,10 +286,8 @@ async def run_team_task(task: str, team_id, db: AsyncSession, broadcast_fn=None)
             db=db
         )
         usage_log.append(usage)
-
         await broadcast("Yujin", "yujin", final)
 
-        # Cost summary
         cost_msg = format_cost_summary(usage_log)
         if cost_msg:
             await broadcast("Yujin", "yujin", cost_msg)
