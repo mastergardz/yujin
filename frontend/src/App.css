@@ -227,7 +227,7 @@ body { background: #f5f5f7; color: #1a1a2e; font-family: 'Segoe UI', -apple-syst
 .status-dot.done { color: #059669; }
 
 /* ===== SETTINGS ===== */
-.settings-container { padding: 32px; overflow-y: auto; height: 100vh; flex: 1; max-width: 640px; }
+.settings-container { padding: 32px; overflow-y: auto; height: 100vh; flex: 1; width: 100%; }
 .settings-container h2 { color: #7c3aed; margin-bottom: 24px; font-size: 1.2rem; }
 .setting-section { background: white; border: 1px solid #e5e5ea; border-radius: 12px; padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
 .setting-section h3 { color: #1a1a2e; margin-bottom: 16px; font-size: 0.95rem; }
@@ -298,7 +298,7 @@ body { background: #f5f5f7; color: #1a1a2e; font-family: 'Segoe UI', -apple-syst
 }
 
 /* Skills Library */
-.skills-page { padding: 24px; max-width: 800px; }
+.skills-page { padding: 24px; width: 100%; box-sizing: border-box; }
 .skills-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
 .skills-header h2 { margin: 0; font-size: 1.2rem; }
 .skill-new-btn { background: #7c3aed; color: white; border: none; border-radius: 10px; padding: 8px 16px; font-size: 0.85rem; cursor: pointer; font-weight: 600; }
@@ -310,7 +310,7 @@ body { background: #f5f5f7; color: #1a1a2e; font-family: 'Segoe UI', -apple-syst
 .skill-card-date { font-size: 0.7rem; color: #bbb; }
 .skill-del-btn { background: none; border: none; cursor: pointer; font-size: 1rem; opacity: 0.5; padding: 4px; }
 .skill-del-btn:hover { opacity: 1; }
-.skills-editor { padding: 24px; max-width: 700px; }
+.skills-editor { padding: 24px; width: 100%; box-sizing: border-box; }
 .skills-editor-header { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
 .skills-editor-header h2 { margin: 0; font-size: 1.1rem; }
 .skill-label { font-size: 0.8rem; color: #555; display: block; margin-bottom: 4px; margin-top: 8px; font-weight: 600; }
