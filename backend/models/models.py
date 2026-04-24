@@ -40,4 +40,5 @@ class YujinConfig(Base):
     id = Column(Integer, primary_key=True, default=1)
     llm_model = Column(String(100), default="gemini-2.0-flash")
     api_key = Column(String(200), nullable=True)
+    deepinfra_api_key = Column(String(200), nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

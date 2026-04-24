@@ -1,10 +1,15 @@
 import { useState, useEffect } from 'react'
 
+const PROVIDERS = [
+  { id: "google",     label: "🟦 Google Gemini" },
+  { id: "deepinfra",  label: "🟧 DeepInfra (Meta Llama)" },
+]
+
 export default function Settings() {
   const [config, setConfig] = useState(null)
   const [selectedModel, setSelectedModel] = useState('')
-  const [apiKey, setApiKey] = useState('')
-  const [showKey, setShowKey] = useState(false)
+  const [keys, setKeys] = useState({ google: '', deepinfra: '' })
+  const [show, setShow] = useState({ google: false, deepinfra: false })
   const [saving, setSaving] = useState(false)
 
   const load = () => fetch('/api/config/').then(r => r.json()).then(data => {
@@ -22,69 +27,80 @@ export default function Settings() {
       body: JSON.stringify({ llm_model: selectedModel })
     })
     setSaving(false)
+    load()
     alert(`✅ เปลี่ยน Yujin ไปใช้ ${selectedModel} แล้วค่ะ`)
   }
 
-  const saveApiKey = async () => {
-    if (!apiKey.trim()) return
+  const saveKey = async (provider) => {
+    if (!keys[provider].trim()) return
     setSaving(true)
-    const res = await fetch('/api/config/apikey', {
+    await fetch('/api/config/apikey', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ api_key: apiKey.trim() })
+      body: JSON.stringify({ provider, api_key: keys[provider].trim() })
     })
-    const data = await res.json()
     setSaving(false)
-    if (data.success) {
-      setApiKey('')
-      load()
-      alert('✅ อัพเดท API Key แล้วค่ะ')
-    }
+    setKeys(prev => ({ ...prev, [provider]: '' }))
+    load()
+    alert('✅ บันทึก API Key แล้วค่ะ')
   }
 
-  if (!config) return <p style={{padding: '24px', color: '#888'}}>Loading...</p>
+  if (!config) return <p style={{padding:'24px',color:'#888'}}>Loading...</p>
+
+  const byProvider = PROVIDERS.map(p => ({
+    ...p,
+    models: config.available_models.filter(m => m.provider === p.id)
+  }))
 
   return (
     <div className="settings-container">
       <h2>Settings</h2>
 
       <div className="setting-section">
-        <h3>🔑 Gemini API Key</h3>
-        <div className="current-key">
-          <span>Key ปัจจุบัน: </span>
-          <code>{config.api_key_masked}</code>
-        </div>
-        <div className="setting-row">
-          <input
-            type={showKey ? 'text' : 'password'}
-            value={apiKey}
-            onChange={e => setApiKey(e.target.value)}
-            placeholder="ใส่ API Key ใหม่..."
-            className="key-input"
-          />
-          <button className="toggle-btn" onClick={() => setShowKey(!showKey)}>
-            {showKey ? '🙈' : '👁️'}
-          </button>
-          <button onClick={saveApiKey} disabled={!apiKey.trim() || saving}>
-            บันทึก
-          </button>
-        </div>
-        <p className="note">
-          สร้าง key ได้ที่ <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer">Google AI Studio</a>
-        </p>
+        <h3>🧠 สมองของ Yujin</h3>
+        {byProvider.map(p => (
+          <div key={p.id} className="provider-group">
+            <div className="provider-label">{p.label}</div>
+            {p.models.map(m => (
+              <label key={m.id} className={`model-option ${selectedModel === m.id ? 'selected' : ''}`}>
+                <input
+                  type="radio"
+                  name="model"
+                  value={m.id}
+                  checked={selectedModel === m.id}
+                  onChange={() => setSelectedModel(m.id)}
+                />
+                {m.name}
+              </label>
+            ))}
+          </div>
+        ))}
+        <button onClick={saveModel} disabled={saving} style={{marginTop:'12px'}}>บันทึก</button>
       </div>
 
       <div className="setting-section">
-        <h3>🧠 สมองของ Yujin</h3>
-        <div className="setting-row">
-          <select value={selectedModel} onChange={e => setSelectedModel(e.target.value)}>
-            {config.available_models.map(m => (
-              <option key={m.id} value={m.id}>{m.name} ({m.provider})</option>
-            ))}
-          </select>
-          <button onClick={saveModel} disabled={saving}>บันทึก</button>
-        </div>
-        <p className="note">Worker แต่ละตัวได้รับ model ตอน approve team</p>
+        <h3>🔑 API Keys</h3>
+        {PROVIDERS.map(p => (
+          <div key={p.id} className="key-row">
+            <div className="key-label">
+              <span>{p.label}</span>
+              <code>{config.keys[p.id]}</code>
+            </div>
+            <div className="setting-row">
+              <input
+                type={show[p.id] ? 'text' : 'password'}
+                value={keys[p.id]}
+                onChange={e => setKeys(prev => ({ ...prev, [p.id]: e.target.value }))}
+                placeholder={`ใส่ ${p.label} API Key ใหม่...`}
+                className="key-input"
+              />
+              <button className="toggle-btn" onClick={() => setShow(prev => ({ ...prev, [p.id]: !prev[p.id] }))}>
+                {show[p.id] ? '🙈' : '👁️'}
+              </button>
+              <button onClick={() => saveKey(p.id)} disabled={!keys[p.id].trim() || saving}>บันทึก</button>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   )

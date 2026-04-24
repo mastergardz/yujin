@@ -1,28 +1,47 @@
 from google import genai
 from google.genai import types
-from core.config import settings
+from openai import AsyncOpenAI
+from core.config import settings, AVAILABLE_MODELS
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-async def get_api_key(db: AsyncSession = None) -> str:
+def get_provider_for_model(model_id: str) -> str:
+    for m in AVAILABLE_MODELS:
+        if m["id"] == model_id:
+            return m["provider"]
+    return "google"
+
+async def get_keys(db: AsyncSession = None) -> dict:
+    keys = {"gemini": settings.gemini_api_key, "deepinfra": settings.deepinfra_api_key}
     if db:
         from models.models import YujinConfig
         result = await db.execute(select(YujinConfig).where(YujinConfig.id == 1))
         config = result.scalar_one_or_none()
-        if config and config.api_key:
-            return config.api_key
-    return settings.gemini_api_key
+        if config:
+            if config.api_key:
+                keys["gemini"] = config.api_key
+            if config.deepinfra_api_key:
+                keys["deepinfra"] = config.deepinfra_api_key
+    return keys
 
 async def call_llm(prompt: str, system: str = "", model: str = None, db: AsyncSession = None) -> str:
-    api_key = await get_api_key(db)
-    client = genai.Client(api_key=api_key)
     model_name = model or settings.yujin_llm_model
-    config = types.GenerateContentConfig(
-        system_instruction=system if system else None,
-    )
-    response = client.models.generate_content(
-        model=model_name,
-        contents=prompt,
-        config=config,
-    )
-    return response.text
+    provider = get_provider_for_model(model_name)
+    keys = await get_keys(db)
+
+    if provider == "google":
+        client = genai.Client(api_key=keys["gemini"])
+        cfg = types.GenerateContentConfig(system_instruction=system if system else None)
+        response = client.models.generate_content(model=model_name, contents=prompt, config=cfg)
+        return response.text
+
+    elif provider == "deepinfra":
+        client = AsyncOpenAI(api_key=keys["deepinfra"], base_url="https://api.deepinfra.com/v1/openai")
+        messages = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
+        response = await client.chat.completions.create(model=model_name, messages=messages)
+        return response.choices[0].message.content
+
+    raise ValueError(f"Unknown provider: {provider}")

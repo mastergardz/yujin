@@ -9,7 +9,7 @@ export default function Chat() {
   const bottomRef = useRef(null)
 
   useEffect(() => {
-    const socket = new WebSocket(`ws://${window.location.host}/api/chat/ws`)
+    const socket = new WebSocket(`ws://${window.location.hostname}:8030/api/chat/ws`)
     socket.onopen = () => setConnected(true)
     socket.onclose = () => setConnected(false)
     socket.onmessage = (e) => {
