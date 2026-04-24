@@ -399,8 +399,8 @@ export default function Workspace({ team: initialTeam, onTeamUpdated }) {
           const isYujin = m.sender_type === 'yujin'
           const isUser = m.sender_type === 'user'
           const color = (!isYujin && !isUser) ? getWorkerColor(m.sender, workerNames) : null
-          const borderColor = isYujin ? '#7c3aed' : isUser ? '#fcd34d' : color.border
-          const senderColor = isYujin ? '#7c3aed' : isUser ? '#92400e' : color.text
+          const borderColor = isYujin ? "#7c3aed" : isUser ? "#fcd34d" : (color?.border || "#6b7280")
+          const senderColor = isYujin ? "#7c3aed" : isUser ? "#92400e" : (color?.text || "#374151")
           return (
             <div key={i} className="ws-msg" style={{borderLeft:`3px solid ${borderColor}`}}>
               <div className="ws-msg-header">
@@ -419,8 +419,8 @@ export default function Workspace({ team: initialTeam, onTeamUpdated }) {
           const who = typingInfo || { sender: 'Yujin', senderType: 'yujin' }
           const isYujin = who.senderType === 'yujin'
           const color = !isYujin ? getWorkerColor(who.sender, workerNames) : null
-          const borderColor = isYujin ? '#7c3aed' : color.border
-          const senderColor = isYujin ? '#7c3aed' : color.text
+          const borderColor = isYujin ? "#7c3aed" : (color?.border || "#6b7280")
+          const senderColor = isYujin ? "#7c3aed" : (color?.text || "#374151")
           return (
             <div className="ws-msg" style={{borderLeft:`3px solid ${borderColor}`}}>
               <div className="ws-msg-header">
