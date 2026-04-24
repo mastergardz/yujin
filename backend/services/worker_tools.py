@@ -172,14 +172,7 @@ async def image_tool(prompt: str, filename: str = "image", model: str = None, db
             return {"success": False, "error": "ยังไม่ได้ตั้ง Gemini API Key ค่ะ — ไปตั้งได้ที่หน้า Settings"}
 
         client = genai.Client(api_key=gemini_key)
-        # model id ที่ใช้ได้จริงกับ Gemini image gen API
-        MODEL_MAP = {
-            "gemini-2.5-flash-image": "gemini-2.0-flash-preview-image-generation",
-            "gemini-3.1-flash-image-preview": "gemini-2.0-flash-preview-image-generation",
-            "gemini-3-pro-image-preview": "gemini-2.0-flash-preview-image-generation",
-        }
-        raw_model = model or DEFAULT_IMAGE_MODEL
-        model_id = MODEL_MAP.get(raw_model, "gemini-2.0-flash-preview-image-generation")
+        model_id = model or DEFAULT_IMAGE_MODEL
 
         response = client.models.generate_content(
             model=model_id,
