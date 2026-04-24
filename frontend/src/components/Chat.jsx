@@ -8,6 +8,8 @@ export default function Chat() {
   const [input, setInput] = useState('')
   const [connected, setConnected] = useState(false)
   const [pending, setPending] = useState(false)
+  const [pastedImage, setPastedImage] = useState(null) // {file, preview}
+  const [analyzingPaste, setAnalyzingPaste] = useState(false)
   const [editingRoom, setEditingRoom] = useState(null)
   const [editName, setEditName] = useState('')
   const bottomRef = useRef(null)
@@ -70,15 +72,39 @@ export default function Chat() {
   }, [messages, pending])
 
   const send = () => {
-    if (!input.trim() || !connected || pending || !wsRef.current) return
-    setMessages(prev => [...prev, { role: 'user', content: input }])
-    wsRef.current.send(JSON.stringify({ message: input }))
+    if (!input.trim() && !pastedImage?.analysis || !connected || pending || !wsRef.current) return
+    const msg = pastedImage?.analysis
+      ? (input.trim() ? input + '\n\n[รูปที่แนบ]\n' + pastedImage.analysis : '[รูปที่แนบ]\n' + pastedImage.analysis)
+      : input
+    setMessages(prev => [...prev, { role: 'user', content: input || '📎 รูปภาพ' }])
+    wsRef.current.send(JSON.stringify({ message: msg }))
     setInput('')
+    setPastedImage(null)
     setPending(true)
   }
 
   const handleKey = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() }
+  }
+
+  const handlePaste = async (e) => {
+    const items = Array.from(e.clipboardData?.items || [])
+    const imgItem = items.find(i => i.type.startsWith('image/'))
+    if (!imgItem) return
+    e.preventDefault()
+    const file = imgItem.getAsFile()
+    const preview = URL.createObjectURL(file)
+    setPastedImage({ file, preview })
+    setAnalyzingPaste(true)
+    try {
+      const form = new FormData()
+      form.append('file', file, 'paste.png')
+      const res = await fetch('/api/files/analyze', { method: 'POST', body: form })
+      if (!res.ok) { setPastedImage(null); return }
+      const data = await res.json()
+      setPastedImage(prev => ({ ...prev, analysis: data.analysis }))
+    } catch { setPastedImage(null) }
+    finally { setAnalyzingPaste(false) }
   }
 
   const selectRoom = (room) => {
@@ -231,10 +257,24 @@ export default function Chat() {
           <div ref={bottomRef} />
         </div>
 
+        {(pastedImage || analyzingPaste) && (
+          <div style={{padding:'8px 16px', background:'#f5f0ff', borderTop:'1px solid #e9d5ff', display:'flex', alignItems:'center', gap:8}}>
+            {analyzingPaste ? (
+              <span style={{fontSize:'0.8rem', color:'#7c3aed'}}>⏳ Yujin กำลังดูรูป...</span>
+            ) : (
+              <>
+                <img src={pastedImage.preview} style={{height:40,borderRadius:6,objectFit:'cover'}} alt="paste" />
+                <span style={{fontSize:'0.8rem', color:'#7c3aed', flex:1}}>📎 รูปภาพ {pastedImage.analysis ? '✓ วิเคราะห์แล้ว' : ''}</span>
+                <button onClick={() => setPastedImage(null)} style={{background:'none',border:'none',cursor:'pointer',color:'#999'}}>✕</button>
+              </>
+            )}
+          </div>
+        )}
         <div className="input-area">
           <textarea ref={inputRef} value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKey}
+            onPaste={handlePaste}
             placeholder="สั่งงาน Yujin... (Enter ส่ง, Shift+Enter ขึ้นบรรทัดใหม่)"
             disabled={!connected || pending || !activeRoom}
             rows={3}

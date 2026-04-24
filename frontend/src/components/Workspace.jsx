@@ -225,6 +225,24 @@ export default function Workspace({ team }) {
           value={task}
           onChange={e => setTask(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), runTask())}
+          onPaste={async (e) => {
+            const items = Array.from(e.clipboardData?.items || [])
+            const imgItem = items.find(i => i.type.startsWith('image/'))
+            if (!imgItem) return
+            e.preventDefault()
+            const file = imgItem.getAsFile()
+            setAnalyzing(true)
+            setAttachedFile(null)
+            try {
+              const form = new FormData()
+              form.append('file', file, 'paste.png')
+              const res = await fetch('/api/files/analyze', { method: 'POST', body: form })
+              if (!res.ok) return
+              const data = await res.json()
+              setAttachedFile({ name: 'รูปที่วาง', analysis: data.analysis, mime: data.mime_type })
+            } catch {}
+            finally { setAnalyzing(false) }
+          }}
           placeholder="สั่งงานทีม... หรือแนบไฟล์ได้เลยค่ะ"
           disabled={!connected || running || analyzing}
           rows={2}
