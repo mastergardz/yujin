@@ -114,6 +114,7 @@ body { background: #f5f5f7; color: #1a1a2e; font-family: 'Segoe UI', -apple-syst
   background: #ede9fe; color: #7c3aed;
 }
 .user-avatar { background: #d1fae5; color: #059669; font-size: 0.6rem; white-space: nowrap; }
+.user-avatar-img { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
 
 .msg-body { display: flex; flex-direction: column; gap: 4px; max-width: 70%; }
 .message.user .msg-body { align-items: flex-end; }
