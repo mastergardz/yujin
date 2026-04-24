@@ -212,10 +212,14 @@ async def run_worker_with_tools(
             tool_result = await file_tool(**params)
         elif tool_name == "image_tool":
             tool_result = await image_tool(**params, db=db)
+            if tool_result.get("success") and tool_result.get("download_url"):
+                img_url = tool_result["download_url"]
+                final_reply = "สร้างรูปเสร็จแล้วค่ะ\n![ภาพที่สร้าง](" + img_url + ")"
+                break
 
         result_str = json.dumps(tool_result, ensure_ascii=False)
         history.append({"role": "assistant", "content": resp})
-        history.append({"role": "user", "content": f"ผลลัพธ์จาก {tool_name}:\n{result_str}\n\nสรุปและส่งผลงานให้พี่เลยค่ะ"})
+        history.append({"role": "user", "content": f"ผลลัพธ์จาก {tool_name}:\n{result_str}\n\nสรุปและส่งผลงานให้พี่เลยค่ะ ถ้ามี download_url ให้ใส่ใน reply ด้วยในรูปแบบ markdown image: ![ชื่อ](url)"})
         final_reply = f"[ผลจาก {tool_name}]\n{result_str}"
 
     return final_reply or resp
