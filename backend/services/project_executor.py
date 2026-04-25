@@ -86,7 +86,9 @@ async def run_worker_with_tools(member: ProjectMember, worker_task: str, big_tas
     if prior_results:
         context_block = "\n\n## ผลงานจากเพื่อนร่วมทีมที่ส่งมาให้คุณใช้:\n"
         for name, result in prior_results.items():
-            context_block += f"### {name}:\n{result}\n\n"
+            is_image = getattr(member, "llm_model", "") in IMAGE_MODEL_IDS
+            snippet = result[:800] + "..." if is_image and len(result) > 800 else result
+            context_block += f"### {name}:\n{snippet}\n\n"
         task_with_context = worker_task + context_block
 
     if member.llm_model in IMAGE_MODEL_IDS and "image_tool" in capabilities:
@@ -217,9 +219,12 @@ async def run_project_task(task: str, project_id, db: AsyncSession, broadcast_fn
 
 วิเคราะห์งานแล้วมอบหมาย subtask ให้แต่ละคน พร้อมระบุว่างานใดต้องรอผลจากใครก่อน (dependency)
 
-ตัวอย่าง:
-- งาน parallel: researcher หลายคนค้นคนละเรื่อง, แปลหลายภาษาพร้อมกัน → depends_on: null
-- งาน sequential: writer เขียนก่อน แล้ว designer สร้างภาพประกอบ → depends_on: "ชื่อ writer"
+กฎสำคัญ:
+- แต่ละ worker ได้รับ assignment เดียวเท่านั้น ห้ามแตก worker คนเดียวเป็นหลาย assignment
+- งาน parallel (ทำพร้อมกันได้): depends_on: null
+- งาน sequential (ต้องรอ): depends_on: "ชื่อ worker ที่ต้องรอ"
+
+ตัวอย่างที่ถูก: ซากุระเขียนบทความ (null) → มิยูสร้างภาพ (depends_on: "ซากุระ")
 
 ตอบในรูปแบบ JSON เท่านั้น:
 {{
