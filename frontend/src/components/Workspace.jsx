@@ -13,7 +13,7 @@ const WORKER_COLORS = [
 const MODEL_SHORT = {
   'gemini-2.5-flash': 'Gemini 2.5 Flash',
   'gemini-2.5-pro': 'Gemini 2.5 Pro',
-  'gemini-2.5-flash-8b': 'Gemini 2.5 Flash-8B',
+  'gemini-2.0-flash-lite': 'Gemini 2.0 Lite',
   'meta-llama/Llama-3.3-70B-Instruct-Turbo': 'Llama 3.3 70B',
   'meta-llama/Llama-4-Scout-17B-16E-Instruct': 'Llama 4 Scout',
   'meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo': 'Llama 3.1 8B',
@@ -22,525 +22,214 @@ const MODEL_SHORT = {
   'gemini-3-pro-image-preview': '🎨 Nano Banana Pro',
 }
 
+function getWorkerColor(name, names) {
+  const idx = names.indexOf(name)
+  return WORKER_COLORS[Math.abs(idx === -1 ? name.split('').reduce((a, c) => a + c.charCodeAt(0), 0) : idx) % WORKER_COLORS.length]
+}
+
 function WsContent({ content }) {
   if (!content) return null
-
-  // split by markdown images ![alt](url), markdown links [text](url), and bare /api/files/download/ urls
-  const TOKEN = /(!?\[.*?\]\([^\)]+\)|https?:\/\/\S+|\/api\/files\/download\/\S+)/g
+  const TOKEN = /(!?\[.*?\]\([^\)]+\)|\/api\/files\/download\/\S+)/g
   const parts = content.split(TOKEN)
-
-  const isImageUrl = (url) => /\.(png|jpg|jpeg|gif|webp)$/i.test(url.split('?')[0])
-  const isLocalFile = (url) => url.startsWith('/api/files/download/')
-
+  const isImgUrl = (url) => /\.(png|jpg|jpeg|gif|webp)$/i.test(url.split('?')[0])
   return (
-    <span style={{whiteSpace:'pre-wrap',wordBreak:'break-word'}}>
+    <span style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
       {parts.map((part, i) => {
-        // markdown image: ![alt](url)
         const mdImg = part.match(/^!\[(.*?)\]\(([^\)]+)\)$/)
         if (mdImg) {
           const [, alt, url] = mdImg
-          const displayUrl = isLocalFile(url) ? url : null
           return (
-            <span key={i} style={{display:'block',margin:'8px 0'}}>
-              <img src={url} alt={alt} style={{maxWidth:'100%',maxHeight:400,borderRadius:10,display:'block',marginBottom:4,border:'1px solid #e5e5ea'}} />
-              {displayUrl && <a href={displayUrl} download style={{fontSize:'0.75rem',color:'#7c3aed'}}>⬇️ {alt || 'ดาวน์โหลด'}</a>}
+            <span key={i} style={{ display: 'block', margin: '8px 0' }}>
+              <img src={url} alt={alt} style={{ maxWidth: '100%', maxHeight: 400, borderRadius: 10, display: 'block', marginBottom: 4, border: '1px solid #e5e5ea' }} />
+              {url.startsWith('/api/files/') && <a href={url} download style={{ fontSize: '0.75rem', color: '#7c3aed' }}>⬇️ ดาวน์โหลด</a>}
             </span>
           )
         }
-
-        // markdown link: [text](url)
         const mdLink = part.match(/^\[(.*?)\]\(([^\)]+)\)$/)
         if (mdLink) {
           const [, label, url] = mdLink
-          if (isLocalFile(url)) {
-            if (isImageUrl(url)) return (
-              <span key={i} style={{display:'block',margin:'8px 0'}}>
-                <img src={url} alt={label} style={{maxWidth:'100%',maxHeight:400,borderRadius:10,display:'block',marginBottom:4,border:'1px solid #e5e5ea'}} />
-                <a href={url} download style={{fontSize:'0.75rem',color:'#7c3aed'}}>⬇️ {label}</a>
+          if (url.startsWith('/api/files/download/')) {
+            if (isImgUrl(url)) return (
+              <span key={i} style={{ display: 'block', margin: '8px 0' }}>
+                <img src={url} alt={label} style={{ maxWidth: '100%', maxHeight: 400, borderRadius: 10, display: 'block', marginBottom: 4 }} />
+                <a href={url} download style={{ fontSize: '0.75rem', color: '#7c3aed' }}>⬇️ {label}</a>
               </span>
             )
-            return <a key={i} href={url} download style={{color:'#7c3aed',textDecoration:'underline'}}>📎 {label}</a>
+            return <a key={i} href={url} download style={{ color: '#7c3aed', textDecoration: 'underline' }}>📎 {label}</a>
           }
-          // external link — show as text only (don't linkify)
           return <span key={i}>{label}</span>
         }
-
-        // bare /api/files/download/ url
         if (part.startsWith('/api/files/download/')) {
           const fname = part.split('/').pop()
-          if (isImageUrl(part)) return (
-            <span key={i} style={{display:'block',margin:'8px 0'}}>
-              <img src={part} alt={fname} style={{maxWidth:'100%',maxHeight:400,borderRadius:10,display:'block',marginBottom:4,border:'1px solid #e5e5ea'}} />
-              <a href={part} download style={{fontSize:'0.75rem',color:'#7c3aed'}}>⬇️ {fname}</a>
-            </span>
-          )
-          return <a key={i} href={part} download style={{color:'#7c3aed',textDecoration:'underline'}}>📎 {fname}</a>
+          return <a key={i} href={part} download style={{ color: '#7c3aed', textDecoration: 'underline' }}>📎 {fname}</a>
         }
-
         return <span key={i}>{part}</span>
       })}
     </span>
   )
 }
 
-function getWorkerColor(name, workerNames) {
-  let idx = workerNames.indexOf(name)
-  if (idx === -1) {
-    // worker not in list yet (e.g. just recruited) — hash name for stable color
-    idx = name.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0)
-  }
-  return WORKER_COLORS[Math.abs(idx) % WORKER_COLORS.length]
-}
-
-function Avatar({ sender, senderType, workerNames, workers }) {
+function Avatar({ sender, senderType, memberNames, members }) {
   if (senderType === 'yujin') return <YujinAvatar size={32} />
-  if (senderType === 'user') return (
-    <img src="/gard.png" style={{width:32,height:32,borderRadius:'50%',objectFit:'cover',flexShrink:0}} alt="พี่การ์ด" />
-  )
-  const color = getWorkerColor(sender, workerNames)
-  const workerAvatar = workers?.find(w => w.name === sender)?.avatar
+  if (senderType === 'user') return <img src="/gard.png" style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} alt="พี่การ์ด" />
+  const member = members?.find(m => m.name === sender)
+  const color = getWorkerColor(sender, memberNames)
+  if (member?.avatar && member.avatar.startsWith('/')) {
+    return <img src={member.avatar} style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} alt={sender} />
+  }
   return (
-    <div style={{
-      width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
-      background: color.bg, border: `1.5px solid ${color.border}`,
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      fontSize: workerAvatar ? '1.1rem' : '0.8rem', fontWeight: 700, color: color.text
-    }}>
-      {workerAvatar || sender.charAt(0)}
+    <div style={{ width: 32, height: 32, borderRadius: '50%', background: color.bg, color: color.text, border: `1px solid ${color.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.85rem', flexShrink: 0 }}>
+      {member?.avatar || sender.charAt(0)}
     </div>
   )
 }
 
-const ACCEPT = "image/jpeg,image/png,image/gif,image/webp,application/pdf,text/plain,text/csv,text/markdown,application/json"
+const ACCEPT = 'image/*,.txt,.csv,.json,.md,.py,.js,.ts,.jsx,.tsx,.html,.css,.pdf,.xlsx,.xls,.docx'
 
-const ALL_MODELS = [
-  { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', type: 'text' },
-  { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro', type: 'text' },
-  { id: 'gemini-2.5-flash-8b', label: 'Gemini 2.5 Flash-8B', type: 'text' },
-  { id: 'meta-llama/Llama-3.3-70B-Instruct-Turbo', label: 'Llama 3.3 70B', type: 'text' },
-  { id: 'meta-llama/Llama-4-Scout-17B-16E-Instruct', label: 'Llama 4 Scout', type: 'text' },
-  { id: 'meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo', label: 'Llama 3.1 8B', type: 'text' },
-  { id: 'gemini-2.5-flash-image', label: '🎨 Gemini 2.5 Flash Image', type: 'image' },
-  { id: 'gemini-3.1-flash-image-preview', label: '🎨 Nano Banana 2', type: 'image' },
-  { id: 'gemini-3-pro-image-preview', label: '🎨 Nano Banana Pro', type: 'image' },
-]
-
-export default function Workspace({ team: initialTeam, onTeamUpdated }) {
-  const [team, setTeam] = useState(initialTeam)
+function ProjectRoom({ project, onBack }) {
   const [messages, setMessages] = useState([])
   const [task, setTask] = useState('')
   const [connected, setConnected] = useState(false)
   const [running, setRunning] = useState(false)
-  const [sending, setSending] = useState(false)
   const [typingInfo, setTypingInfo] = useState(null)
   const [pendingFile, setPendingFile] = useState(null)
-  const [editingWorker, setEditingWorker] = useState(null)
-  const [editingPersona, setEditingPersona] = useState(null) // worker id
-  const [personaForm, setPersonaForm] = useState({}) // {avatar, personality, speech_style}
-  const [allSkills, setAllSkills] = useState([])
-  const [recruitRequest, setRecruitRequest] = useState(null) // {name, role, llm_model, capabilities, reason}
-  const wsRef = useRef(null)
   const bottomRef = useRef(null)
+  const wsRef = useRef(null)
   const reconnectTimer = useRef(null)
   const fileInputRef = useRef(null)
-  const pendingImageRef = useRef(null)
+  const memberNames = (project.members || []).map(m => m.name)
 
-  const workerNames = team.workers.map(w => w.name)
-
-  useEffect(() => {
-    if (!editingWorker) return
-    const close = (e) => setEditingWorker(null)
-    // setTimeout ให้ event ปัจจุบัน (ที่เปิด dropdown) ผ่านไปก่อน
-    const timer = setTimeout(() => document.addEventListener('click', close), 0)
-    return () => {
-      clearTimeout(timer)
-      document.removeEventListener('click', close)
-    }
-  }, [editingWorker])
-
-  const fireWorker = async (workerId, workerName) => {
-    if (!confirm(`ไล่ ${workerName} ออกจากทีม?`)) return
-    await fetch(`/api/teams/workers/${workerId}`, { method: 'DELETE' })
-    setTeam(prev => ({ ...prev, workers: prev.workers.filter(w => w.id !== workerId) }))
-    if (onTeamUpdated) onTeamUpdated()
-  }
-
-  const openPersona = (w) => {
-    setEditingPersona(w.id)
-    setPersonaForm({ avatar: w.avatar || '', personality: w.personality || '', speech_style: w.speech_style || '', skills: w.skills || [] })
-    fetch('/api/skills/').then(r => r.json()).then(setAllSkills)
-  }
-
-  const savePersona = async (workerId) => {
-    const res = await fetch(`/api/teams/workers/${workerId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(personaForm)
-    })
-    if (res.ok) {
-      setTeam(prev => ({
-        ...prev,
-        workers: prev.workers.map(w => w.id === workerId ? { ...w, ...personaForm } : w)
-      }))
-    }
-    setEditingPersona(null)
-  }
-
-  const updateWorkerModel = async (workerId, newModel) => {
-    const res = await fetch(`/api/teams/workers/${workerId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ llm_model: newModel })
-    })
-    if (res.ok) {
-      const updated = await res.json()
-      setTeam(prev => ({
-        ...prev,
-        workers: prev.workers.map(w => w.id === workerId ? { ...w, llm_model: updated.llm_model } : w)
-      }))
-      if (onTeamUpdated) onTeamUpdated()
-    }
-    setEditingWorker(null)
-  }
-
-  const decideRecruit = async (approved) => {
-    const snapshot = recruitRequest
-    setRecruitRequest(null)
-    const body = approved
-      ? { approved: true, worker: snapshot }
-      : { approved: false }
-    await fetch(`/api/workspace/${team.id}/recruit`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    })
-  }
-
-  const connect = () => {
+  const connectWs = () => {
     if (wsRef.current) { wsRef.current.onclose = null; wsRef.current.close() }
-    const ws = new WebSocket(`ws://${window.location.hostname}:8030/api/workspace/${team.id}/ws`)
-    ws.onopen = () => setConnected(true)
-    ws.onclose = () => {
+    if (reconnectTimer.current) clearTimeout(reconnectTimer.current)
+    const socket = new WebSocket(`ws://${window.location.hostname}:8030/api/workspace/${project.id}/ws`)
+    socket.onopen = () => setConnected(true)
+    socket.onclose = () => {
       setConnected(false)
-      setRunning(false)
-      setTypingInfo(null)
-      reconnectTimer.current = setTimeout(connect, 3000)
+      reconnectTimer.current = setTimeout(connectWs, 3000)
     }
-    ws.onmessage = (e) => {
+    socket.onmessage = (e) => {
       const data = JSON.parse(e.data)
       if (data.type === 'typing') {
         setTypingInfo({ sender: data.sender, senderType: data.sender_type })
         return
       }
-      if (data.type === 'recruit_request') {
-        setRecruitRequest(data.worker)
-        return
-      }
-      if (data.type === 'team_updated') {
-        setRecruitRequest(null)
-        fetch(`/api/teams/`).then(r => r.json()).then(teams => {
-          const updated = teams.find(t => t.id === team.id)
-          if (updated) {
-            setTeam(updated)
-            if (onTeamUpdated) onTeamUpdated()
-          }
-        })
-        return
-      }
       setTypingInfo(null)
-      if (data.sender_type === 'user' && pendingImageRef.current) {
-        data.image = pendingImageRef.current
-        pendingImageRef.current = null
-      }
+      if (data.sender_type !== 'user') setRunning(false)
       setMessages(prev => [...prev, data])
-      if (data.sender_type === 'yujin' && !data.content.includes('รับงานแล้ว') && !data.content.startsWith('@')) {
-        setRunning(false)
-      }
     }
-    wsRef.current = ws
+    wsRef.current = socket
   }
 
   useEffect(() => {
-    fetch(`/api/workspace/${team.id}/history`).then(r => r.json()).then(setMessages)
-    connect()
-    return () => {
-      if (reconnectTimer.current) clearTimeout(reconnectTimer.current)
-      if (wsRef.current) { wsRef.current.onclose = null; wsRef.current.close() }
+    fetch(`/api/workspace/${project.id}/history`).then(r => r.json()).then(setMessages)
+    connectWs()
+    return () => { if (reconnectTimer.current) clearTimeout(reconnectTimer.current) }
+  }, [project.id])
+
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages, running, typingInfo])
+
+  const runTask = () => {
+    if ((!task.trim() && !pendingFile) || !connected || running || !wsRef.current) return
+    setRunning(true)
+    wsRef.current.send(JSON.stringify({ task, file_context: pendingFile?.content || '' }))
+    setTask('')
+    setPendingFile(null)
+  }
+
+  const handleFileChange = async (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    e.target.value = ''
+    const isImg = file.type.startsWith('image/')
+    if (isImg) {
+      const preview = URL.createObjectURL(file)
+      const fd = new FormData(); fd.append('file', file)
+      const res = await fetch('/api/files/analyze-image', { method: 'POST', body: fd })
+      const data = await res.json()
+      setPendingFile({ filename: file.name, content: data.analysis || '', preview })
+    } else {
+      const text = await file.text()
+      setPendingFile({ filename: file.name, content: `[ไฟล์: ${file.name}]\n${text}`, preview: null })
     }
-  }, [team.id])
+  }
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
-
-  // paste รูป — แค่เก็บ file ไว้ ยังไม่วิเคราะห์
   const handlePaste = (e) => {
-    const items = Array.from(e.clipboardData?.items || [])
-    const imgItem = items.find(i => i.type.startsWith('image/'))
+    const imgItem = Array.from(e.clipboardData?.items || []).find(i => i.type.startsWith('image/'))
     if (!imgItem) return
     e.preventDefault()
     const file = imgItem.getAsFile()
     const preview = URL.createObjectURL(file)
-    setPendingFile({ file, filename: 'paste.png', preview })
+    const fd = new FormData(); fd.append('file', file)
+    fetch('/api/files/analyze-image', { method: 'POST', body: fd })
+      .then(r => r.json())
+      .then(data => setPendingFile({ filename: 'clipboard.png', content: data.analysis || '', preview }))
   }
 
-  // เลือกไฟล์ — แค่เก็บ file ไว้ ยังไม่วิเคราะห์
-  const handleFileChange = (e) => {
-    const file = e.target.files[0]
-    if (!file) return
-    const preview = file.type.startsWith('image/') ? URL.createObjectURL(file) : null
-    setPendingFile({ file, filename: file.name, preview })
-    e.target.value = ''
-  }
-
-  const runTask = async () => {
-    if ((!task.trim() && !pendingFile) || !connected || running || sending) return
-    setSending(true)
-    try {
-      let file_context = null
-      if (pendingFile) {
-        // วิเคราะห์ตอนกดส่ง
-        const form = new FormData()
-        form.append('file', pendingFile.file, pendingFile.filename)
-        const res = await fetch('/api/files/analyze', { method: 'POST', body: form })
-        if (!res.ok) { const err = await res.json(); alert(err.detail); return }
-        const data = await res.json()
-        file_context = '[ไฟล์: ' + data.filename + ']\n' + data.analysis
-      }
-
-      const payload = { task: task.trim() || '(ดูไฟล์แนบ)' }
-      if (file_context) payload.file_context = file_context
-      if (pendingFile?.preview) pendingImageRef.current = pendingFile.preview
-
-      wsRef.current.send(JSON.stringify(payload))
-      setTask('')
-      setPendingFile(null)
-      setRunning(true)
-    } finally {
-      setSending(false)
-    }
-  }
-
-  const canSend = connected && !running && !sending && (task.trim() || pendingFile)
+  const canSend = connected && !running && (task.trim() || pendingFile)
 
   return (
-    <div className="workspace" style={{position:'relative'}}>
-      {recruitRequest && (
-        <div style={{
-          position:'absolute', inset:0, background:'rgba(0,0,0,0.45)',
-          zIndex:200, display:'flex', alignItems:'center', justifyContent:'center'
-        }}>
-          <div style={{
-            background:'white', borderRadius:'16px', padding:'28px 32px',
-            maxWidth:'380px', width:'90%', boxShadow:'0 8px 32px rgba(0,0,0,0.18)'
-          }}>
-            <div style={{fontSize:'1.3rem', fontWeight:700, marginBottom:'6px'}}>🤝 Yujin ขอ Recruit</div>
-            <div style={{fontSize:'0.85rem', color:'#666', marginBottom:'16px'}}>Yujin เห็นว่างานต้องการ skill เพิ่มค่ะ</div>
-            <div style={{background:'#f9fafb', borderRadius:'10px', padding:'14px', marginBottom:'18px'}}>
-              <div style={{fontWeight:700, fontSize:'1rem'}}>{recruitRequest.name}</div>
-              <div style={{color:'#555', fontSize:'0.85rem', margin:'4px 0'}}>{recruitRequest.role}</div>
-              <div style={{color:'#888', fontSize:'0.8rem', marginTop:'6px'}}>เหตุผล: {recruitRequest.reason}</div>
-              <div style={{display:'flex', gap:'6px', marginTop:'8px', flexWrap:'wrap'}}>
-                <span style={{background:'#ecfdf5',color:'#059669',fontSize:'0.72rem',padding:'2px 8px',borderRadius:'8px',border:'1px solid #a7f3d0'}}>
-                  {MODEL_SHORT[recruitRequest.llm_model] || recruitRequest.llm_model}
-                </span>
-                {(recruitRequest.capabilities || []).map(c => (
-                  <span key={c} style={{background:'#eff6ff',color:'#2563eb',fontSize:'0.72rem',padding:'2px 8px',borderRadius:'8px',border:'1px solid #bfdbfe'}}>
-                    {{'shell_tool':'💻','db_tool':'🗄️','file_tool':'📄','image_tool':'🎨'}[c] || '🔧'} {c.replace('_tool','')}
-                  </span>
-                ))}
-              </div>
-            </div>
-            <div style={{display:'flex', gap:'10px'}}>
-              <button
-                onClick={() => decideRecruit(true)}
-                style={{flex:1, background:'#7c3aed', color:'white', border:'none', borderRadius:'10px', padding:'10px', fontSize:'0.9rem', cursor:'pointer', fontWeight:600}}
-              >✅ Approve</button>
-              <button
-                onClick={() => decideRecruit(false)}
-                style={{flex:1, background:'#f3f4f6', color:'#555', border:'none', borderRadius:'10px', padding:'10px', fontSize:'0.9rem', cursor:'pointer'}}
-              >❌ Decline</button>
-            </div>
-          </div>
-        </div>
-      )}
-      {editingPersona && (() => {
-        const w = team.workers.find(w => w.id === editingPersona)
-        if (!w) return null
-        return (
-          <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center'}}
-            onClick={() => setEditingPersona(null)}>
-            <div style={{background:'white',borderRadius:16,padding:24,minWidth:320,maxWidth:440,boxShadow:'0 8px 32px rgba(0,0,0,0.18)'}}
-              onClick={e => e.stopPropagation()}>
-              <div style={{fontWeight:700,fontSize:'1rem',marginBottom:16}}>✏️ แก้ Persona — {w.name}</div>
-              <label style={{fontSize:'0.8rem',color:'#555',display:'block',marginBottom:4}}>Avatar (emoji หรือตัวอักษร)</label>
-              <input
-                value={personaForm.avatar}
-                onChange={e => setPersonaForm(p => ({...p, avatar: e.target.value}))}
-                placeholder="เช่น 🎨 หรือ ป"
-                style={{width:'100%',padding:'8px 10px',borderRadius:8,border:'1px solid #e5e5ea',fontSize:'0.9rem',marginBottom:12,boxSizing:'border-box'}}
-              />
-              <label style={{fontSize:'0.8rem',color:'#555',display:'block',marginBottom:4}}>นิสัย / บุคลิก</label>
-              <textarea
-                value={personaForm.personality}
-                onChange={e => setPersonaForm(p => ({...p, personality: e.target.value}))}
-                placeholder="เช่น ละเอียด รอบคอบ ชอบตรวจสอบซ้ำก่อนส่ง"
-                rows={2}
-                style={{width:'100%',padding:'8px 10px',borderRadius:8,border:'1px solid #e5e5ea',fontSize:'0.9rem',marginBottom:12,resize:'vertical',boxSizing:'border-box'}}
-              />
-              <label style={{fontSize:'0.8rem',color:'#555',display:'block',marginBottom:4}}>สไตล์การพูด</label>
-              <textarea
-                value={personaForm.speech_style}
-                onChange={e => setPersonaForm(p => ({...p, speech_style: e.target.value}))}
-                placeholder="เช่น พูดสั้น กระชับ ตรงประเด็น ไม่อ้อมค้อม"
-                rows={2}
-                style={{width:'100%',padding:'8px 10px',borderRadius:8,border:'1px solid #e5e5ea',fontSize:'0.9rem',marginBottom:12,resize:'vertical',boxSizing:'border-box'}}
-              />
-              <label style={{fontSize:'0.8rem',color:'#555',display:'block',marginBottom:6}}>📚 Skills</label>
-              {allSkills.length === 0 && <div style={{fontSize:'0.75rem',color:'#aaa',marginBottom:12}}>ยังไม่มี skill ค่ะ สร้างได้ที่หน้า Skills</div>}
-              <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:16}}>
-                {allSkills.map(s => {
-                  const active = (personaForm.skills || []).includes(s.id)
-                  return (
-                    <span key={s.id}
-                      onClick={() => setPersonaForm(p => ({
-                        ...p,
-                        skills: active ? (p.skills||[]).filter(id => id !== s.id) : [...(p.skills||[]), s.id]
-                      }))}
-                      style={{
-                        padding:'4px 10px', borderRadius:20, fontSize:'0.75rem', cursor:'pointer',
-                        background: active ? '#7c3aed' : '#f3f4f6',
-                        color: active ? 'white' : '#555',
-                        border: `1px solid ${active ? '#7c3aed' : '#e5e5ea'}`,
-                      }}
-                    >{active ? '✓ ' : ''}{s.name}</span>
-                  )
-                })}
-              </div>
-              <div style={{display:'flex',gap:8}}>
-                <button onClick={() => savePersona(w.id)}
-                  style={{flex:1,background:'#7c3aed',color:'white',border:'none',borderRadius:10,padding:'10px',fontWeight:600,cursor:'pointer'}}>
-                  💾 บันทึก
-                </button>
-                <button onClick={() => setEditingPersona(null)}
-                  style={{flex:1,background:'#f3f4f6',color:'#555',border:'none',borderRadius:10,padding:'10px',cursor:'pointer'}}>
-                  ยกเลิก
-                </button>
-              </div>
-            </div>
-          </div>
-        )
-      })()}
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', flex: 1 }}>
+      {/* header */}
       <div className="workspace-header">
-        <div style={{minWidth:0}}>
-          <div className="workspace-title">👥 {team.name}</div>
-          <div className="workspace-workers">
-            {team.workers.map(w => {
-              const color = getWorkerColor(w.name, workerNames)
-              const modelLabel = MODEL_SHORT[w.llm_model] || w.llm_model || ''
-              const isEditing = editingWorker === w.id
-              return (
-                <span key={w.id} className="worker-chip" style={{background:color.bg,color:color.text,border:`1px solid ${color.border}`,position:'relative'}}>
-                  <span
-                    onClick={e => { e.stopPropagation(); openPersona(w) }}
-                    style={{cursor:'pointer'}}
-                    title="แก้ persona"
-                  >{w.avatar || w.name.charAt(0)} {w.name} — {w.role}</span>
-                  {modelLabel && (
-                    <span
-                      onClick={() => setEditingWorker(isEditing ? null : w.id)}
-                      style={{display:'block',fontSize:'0.65rem',opacity:0.7,marginTop:'1px',fontWeight:400,cursor:'pointer',textDecoration:'underline dotted',userSelect:'none'}}
-                      title="คลิกเพื่อเปลี่ยน model"
-                    >
-                      {modelLabel} ✏️
-                    </span>
-                  )}
-                  <span
-                    onClick={e => { e.stopPropagation(); fireWorker(w.id, w.name) }}
-                    style={{marginLeft:'4px',cursor:'pointer',opacity:0.5,fontSize:'0.7rem',lineHeight:1}}
-                    title={`ไล่ ${w.name} ออก`}
-                  >✕</span>
-                  {isEditing && (
-                    <div style={{
-                      position:'absolute', top:'100%', left:0, zIndex:100,
-                      background:'white', border:'1px solid #e5e5ea', borderRadius:'8px',
-                      boxShadow:'0 4px 16px rgba(0,0,0,0.12)', minWidth:'200px', padding:'4px 0',
-                    }}
-                      onClick={e => e.stopPropagation()}
-                    >
-                      {['text','image'].map(type => (
-                        <div key={type}>
-                          <div style={{fontSize:'0.65rem',color:'#999',padding:'4px 10px 2px',fontWeight:600,textTransform:'uppercase'}}>
-                            {type === 'text' ? '🧠 Text' : '🎨 Image'}
-                          </div>
-                          {ALL_MODELS.filter(m => m.type === type).map(m => (
-                            <div
-                              key={m.id}
-                              onClick={() => updateWorkerModel(w.id, m.id)}
-                              style={{
-                                padding:'5px 10px', fontSize:'0.78rem', cursor:'pointer',
-                                background: w.llm_model === m.id ? '#f3e8ff' : 'transparent',
-                                color: w.llm_model === m.id ? '#7c3aed' : '#333',
-                                fontWeight: w.llm_model === m.id ? 600 : 400,
-                              }}
-                              onMouseEnter={e => { if (w.llm_model !== m.id) e.target.style.background='#f9fafb' }}
-                              onMouseLeave={e => { if (w.llm_model !== m.id) e.target.style.background='transparent' }}
-                            >
-                              {w.llm_model === m.id ? '✓ ' : ''}{m.label}
-                            </div>
-                          ))}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </span>
-              )
-            })}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+          <button onClick={onBack} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.1rem', padding: '2px 6px', color: '#7c3aed' }}>←</button>
+          <div style={{ minWidth: 0 }}>
+            <div className="workspace-title">🗂️ {project.name}</div>
+            <div className="workspace-workers">
+              {(project.members || []).map(m => {
+                const color = getWorkerColor(m.name, memberNames)
+                return (
+                  <span key={m.id} className="worker-chip" style={{ background: color.bg, color: color.text, border: `1px solid ${color.border}` }}>
+                    {m.avatar && !m.avatar.startsWith('/') ? m.avatar : m.name.charAt(0)} {m.name} — {m.role}
+                    {m.llm_model && <span style={{ display: 'block', fontSize: '0.65rem', opacity: 0.7, fontWeight: 400 }}>{MODEL_SHORT[m.llm_model] || m.llm_model}</span>}
+                  </span>
+                )
+              })}
+            </div>
           </div>
         </div>
-        <span className={`ws-status ${connected ? 'online' : 'offline'}`}>
-          {connected ? '🟢' : '🔴'}
-        </span>
+        <span className={`ws-status ${connected ? 'online' : 'offline'}`}>{connected ? '🟢' : '🔴'}</span>
       </div>
 
+      {/* messages */}
       <div className="workspace-messages">
         {messages.length === 0 && (
-          <div className="empty-chat" style={{marginTop:'40px'}}>
-            <div className="empty-icon">👥</div>
-            <div>สั่งงานทีมได้เลยค่ะ พี่<br/>paste รูปหรือแนบไฟล์ได้เลยค่ะ</div>
+          <div className="empty-chat" style={{ marginTop: 40 }}>
+            <div style={{ fontSize: '3rem' }}>🗂️</div>
+            <div>สั่งงานทีมได้เลยค่ะ พี่</div>
           </div>
         )}
         {messages.map((m, i) => {
           const isYujin = m.sender_type === 'yujin'
           const isUser = m.sender_type === 'user'
-          const color = (!isYujin && !isUser) ? getWorkerColor(m.sender, workerNames) : null
-          const borderColor = isYujin ? "#7c3aed" : isUser ? "#fcd34d" : (color?.border || "#6b7280")
-          const senderColor = isYujin ? "#7c3aed" : isUser ? "#92400e" : (color?.text || "#374151")
+          const color = (!isYujin && !isUser) ? getWorkerColor(m.sender, memberNames) : null
+          const borderColor = isYujin ? '#7c3aed' : isUser ? '#fcd34d' : (color?.border || '#6b7280')
+          const senderColor = isYujin ? '#7c3aed' : isUser ? '#92400e' : (color?.text || '#374151')
           return (
-            <div key={i} className="ws-msg" style={{borderLeft:`3px solid ${borderColor}`}}>
+            <div key={i} className="ws-msg" style={{ borderLeft: `3px solid ${borderColor}` }}>
               <div className="ws-msg-header">
-                <Avatar sender={m.sender} senderType={m.sender_type} workerNames={workerNames} workers={team.workers} />
-                <span className="ws-sender" style={{color:senderColor}}>{m.sender}</span>
-                <span className="ws-time">{new Date(m.created_at.endsWith('Z') ? m.created_at : m.created_at + 'Z').toLocaleTimeString('th-TH', {timeZone:'Asia/Bangkok'})}</span>
+                <Avatar sender={m.sender} senderType={m.sender_type} memberNames={memberNames} members={project.members} />
+                <span className="ws-sender" style={{ color: senderColor }}>{m.sender}</span>
+                <span className="ws-time">{new Date(m.created_at.endsWith('Z') ? m.created_at : m.created_at + 'Z').toLocaleTimeString('th-TH', { timeZone: 'Asia/Bangkok' })}</span>
               </div>
-              <div className="ws-content">
-                {m.image && <img src={m.image} style={{maxWidth:'100%',maxHeight:200,borderRadius:8,marginBottom:m.content?6:0,display:'block'}} alt="รูปแนบ" />}
-                <WsContent content={m.content} />
-              </div>
+              <div className="ws-content"><WsContent content={m.content} /></div>
             </div>
           )
         })}
         {(running || typingInfo) && (() => {
           const who = typingInfo || { sender: 'Yujin', senderType: 'yujin' }
           const isYujin = who.senderType === 'yujin'
-          const color = !isYujin ? getWorkerColor(who.sender, workerNames) : null
-          const borderColor = isYujin ? "#7c3aed" : (color?.border || "#6b7280")
-          const senderColor = isYujin ? "#7c3aed" : (color?.text || "#374151")
+          const color = !isYujin ? getWorkerColor(who.sender, memberNames) : null
+          const borderColor = isYujin ? '#7c3aed' : (color?.border || '#6b7280')
+          const senderColor = isYujin ? '#7c3aed' : (color?.text || '#374151')
           return (
-            <div className="ws-msg" style={{borderLeft:`3px solid ${borderColor}`}}>
+            <div className="ws-msg" style={{ borderLeft: `3px solid ${borderColor}` }}>
               <div className="ws-msg-header">
-                <Avatar sender={who.sender} senderType={who.senderType} workerNames={workerNames} workers={team.workers} />
-                <span className="ws-sender" style={{color:senderColor}}>{who.sender}</span>
+                <Avatar sender={who.sender} senderType={who.senderType} memberNames={memberNames} members={project.members} />
+                <span className="ws-sender" style={{ color: senderColor }}>{who.sender}</span>
               </div>
-              <div className="bubble typing"><span/><span/><span/></div>
+              <div className="bubble typing"><span /><span /><span /></div>
             </div>
           )
         })()}
@@ -548,29 +237,17 @@ export default function Workspace({ team: initialTeam, onTeamUpdated }) {
       </div>
 
       {pendingFile && (
-        <div style={{padding:'8px 16px',background:'#f5f0ff',borderTop:'1px solid #e9d5ff',display:'flex',alignItems:'center',gap:8}}>
-          {pendingFile.preview
-            ? <img src={pendingFile.preview} style={{height:36,borderRadius:6,objectFit:'cover'}} alt="preview" />
-            : <span style={{fontSize:'1.2rem'}}>📄</span>
-          }
-          <span style={{fontSize:'0.8rem',color:'#7c3aed',flex:1}}>📎 {pendingFile.filename}</span>
-          <button onClick={() => setPendingFile(null)} style={{background:'none',border:'none',cursor:'pointer',color:'#999',fontSize:'1rem'}}>✕</button>
+        <div style={{ padding: '8px 16px', background: '#f5f0ff', borderTop: '1px solid #e9d5ff', display: 'flex', alignItems: 'center', gap: 8 }}>
+          {pendingFile.preview ? <img src={pendingFile.preview} style={{ height: 36, borderRadius: 6, objectFit: 'cover' }} alt="preview" /> : <span style={{ fontSize: '1.2rem' }}>📄</span>}
+          <span style={{ fontSize: '0.8rem', color: '#7c3aed', flex: 1 }}>📎 {pendingFile.filename}</span>
+          <button onClick={() => setPendingFile(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#999' }}>✕</button>
         </div>
       )}
 
       <div className="workspace-input">
-        <input type="file" ref={fileInputRef} accept={ACCEPT} onChange={handleFileChange} style={{display:'none'}} />
-        <button
-          onClick={() => fileInputRef.current.click()}
-          disabled={!connected || running}
-          title="แนบไฟล์/รูป"
-          style={{
-            background:'none', border:'1.5px solid #e5e5ea', borderRadius:'8px',
-            padding:'8px 10px', cursor:'pointer', fontSize:'1.1rem',
-            color:'#7c3aed', flexShrink:0,
-            opacity:(!connected || running) ? 0.4 : 1
-          }}
-        >📎</button>
+        <input type="file" ref={fileInputRef} accept={ACCEPT} onChange={handleFileChange} style={{ display: 'none' }} />
+        <button onClick={() => fileInputRef.current.click()} disabled={!canSend} title="แนบไฟล์"
+          style={{ background: 'none', border: '1.5px solid #e5e5ea', borderRadius: 8, padding: '8px 10px', cursor: 'pointer', fontSize: '1.1rem', color: '#7c3aed', flexShrink: 0, opacity: !canSend ? 0.4 : 1 }}>📎</button>
         <textarea
           value={task}
           onChange={e => setTask(e.target.value)}
@@ -581,8 +258,80 @@ export default function Workspace({ team: initialTeam, onTeamUpdated }) {
           rows={2}
         />
         <button className="send-btn" onClick={runTask} disabled={!canSend}>
-          {sending ? '⏳' : running ? '⏳' : 'ส่ง'}
+          {running ? '⏳' : 'ส่ง'}
         </button>
+      </div>
+    </div>
+  )
+}
+
+export default function Workspace() {
+  const [projects, setProjects] = useState([])
+  const [activeProject, setActiveProject] = useState(null)
+
+  const loadProjects = async () => {
+    const data = await fetch('/api/projects/').then(r => r.json())
+    setProjects(data)
+    return data
+  }
+
+  useEffect(() => { loadProjects() }, [])
+
+  const deleteProject = async (e, p) => {
+    e.stopPropagation()
+    if (!confirm(`ลบ project "${p.name}" ใช่มั๊ย?`)) return
+    await fetch(`/api/projects/${p.id}`, { method: 'DELETE' })
+    loadProjects()
+    if (activeProject?.id === p.id) setActiveProject(null)
+  }
+
+  if (activeProject) {
+    return <ProjectRoom project={activeProject} onBack={() => { setActiveProject(null); loadProjects() }} />
+  }
+
+  return (
+    <div style={{ padding: 24, flex: 1, overflowY: 'auto' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+        <h2 style={{ margin: 0, fontSize: '1.2rem' }}>🗂️ Workspace — Projects</h2>
+        <span style={{ fontSize: '0.8rem', color: '#aaa' }}>สร้าง project ได้จากหน้า Chat</span>
+      </div>
+
+      {projects.length === 0 && (
+        <div style={{ textAlign: 'center', color: '#aaa', marginTop: 60 }}>
+          <div style={{ fontSize: '3rem' }}>🗂️</div>
+          <div>ยังไม่มี project ค่ะ</div>
+          <div style={{ fontSize: '0.82rem', marginTop: 8 }}>สั่งงาน Yujin ที่หน้า Chat แล้ว Approve proposal เพื่อสร้าง project</div>
+        </div>
+      )}
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {projects.map(p => (
+          <div key={p.id}
+            onClick={() => setActiveProject(p)}
+            style={{ background: 'white', border: '1px solid #e5e5ea', borderRadius: 14, padding: '16px 18px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 14, transition: 'box-shadow 0.15s' }}
+            onMouseEnter={e => e.currentTarget.style.boxShadow = '0 2px 12px rgba(124,58,237,0.1)'}
+            onMouseLeave={e => e.currentTarget.style.boxShadow = 'none'}
+          >
+            <div style={{ width: 44, height: 44, borderRadius: 12, background: '#f3e8ff', color: '#7c3aed', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.4rem', flexShrink: 0 }}>🗂️</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 700, fontSize: '0.98rem', marginBottom: 3 }}>{p.name}</div>
+              <div style={{ fontSize: '0.78rem', color: '#888', marginBottom: 6 }}>{p.description || '—'}</div>
+              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                {(p.members || []).map(m => (
+                  <span key={m.id} style={{ fontSize: '0.7rem', background: '#f3e8ff', color: '#7c3aed', padding: '2px 8px', borderRadius: 10, border: '1px solid #e9d5ff' }}>
+                    {m.avatar && !m.avatar.startsWith('/') ? m.avatar + ' ' : ''}{m.name}
+                  </span>
+                ))}
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+              <span style={{ fontSize: '0.75rem', color: '#aaa', whiteSpace: 'nowrap' }}>
+                {new Date(p.created_at).toLocaleDateString('th-TH')}
+              </span>
+              <button onClick={e => deleteProject(e, p)} style={{ background: 'none', border: 'none', cursor: 'pointer', opacity: 0.5, fontSize: '1rem', padding: '2px 6px' }}>🗑️</button>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   )

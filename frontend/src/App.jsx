@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import Chat from './components/Chat'
 import YujinAvatar from './components/YujinAvatar'
-import Teams from './components/Teams'
+import Workspace from './components/Workspace'
 import Settings from './components/Settings'
 import Skills from './components/Skills'
 import WorkerLibrary from './components/WorkerLibrary'
@@ -14,9 +14,9 @@ const MODEL_SHORT = {
   'meta-llama/Llama-3.3-70B-Instruct-Turbo': 'Llama 3.3 70B',
   'meta-llama/Llama-4-Scout-17B-16E-Instruct': 'Llama 4 Scout',
   'meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo': 'Llama 3.1 8B',
-  'gemini-2.5-flash-image': '🎨 Gemini 2.5 Flash Image',
-  'gemini-3.1-flash-image-preview': '🎨 Nano Banana 2',
-  'gemini-3-pro-image-preview': '🎨 Nano Banana Pro',
+  'gemini-2.5-flash-image': 'Gemini 2.5 Flash Image',
+  'gemini-3.1-flash-image-preview': 'Nano Banana 2',
+  'gemini-3-pro-image-preview': 'Nano Banana Pro',
 }
 
 export default function App() {
@@ -25,7 +25,7 @@ export default function App() {
 
   useEffect(() => {
     fetch('/api/config/').then(r => r.json()).then(d => setYujinModel(d.llm_model || ''))
-  }, [tab]) // re-fetch when switching tabs (in case settings changed)
+  }, [tab])
 
   const modelLabel = MODEL_SHORT[yujinModel] || yujinModel.split('/').pop() || 'AI Secretary'
 
@@ -43,8 +43,8 @@ export default function App() {
           <button className={tab === 'chat' ? 'active' : ''} onClick={() => setTab('chat')}>
             <span>💬</span> Chat
           </button>
-          <button className={tab === 'teams' ? 'active' : ''} onClick={() => setTab('teams')}>
-            <span>👥</span> Workspace
+          <button className={tab === 'workspace' ? 'active' : ''} onClick={() => setTab('workspace')}>
+            <span>🗂️</span> Workspace
           </button>
           <button className={tab === 'workers' ? 'active' : ''} onClick={() => setTab('workers')}>
             <span>👤</span> Workers
@@ -59,7 +59,7 @@ export default function App() {
       </aside>
       <main className="main-content">
         {tab === 'chat' && <Chat />}
-        {tab === 'teams' && <Teams />}
+        {tab === 'workspace' && <Workspace />}
         {tab === 'workers' && <WorkerLibrary />}
         {tab === 'skills' && <Skills />}
         {tab === 'settings' && <Settings />}

@@ -2,49 +2,31 @@ from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from core.database import get_db
-from models.models import WorkspaceMessage, Team, Worker
-from services.team_executor import run_team_task, resolve_recruit
-from pydantic import BaseModel
-from typing import Optional, List
+from models.models import ProjectMessage, Project, ProjectMember
+from services.project_executor import run_project_task
 import json, uuid
-from datetime import datetime, timezone
 
 router = APIRouter(prefix="/api/workspace", tags=["workspace"])
 
 connections: dict[str, list[WebSocket]] = {}
 
-@router.get("/{team_id}/history")
-async def get_history(team_id: str, db: AsyncSession = Depends(get_db)):
+@router.get("/{project_id}/history")
+async def get_history(project_id: str, db: AsyncSession = Depends(get_db)):
     result = await db.execute(
-        select(WorkspaceMessage)
-        .where(WorkspaceMessage.team_id == uuid.UUID(team_id))
-        .order_by(WorkspaceMessage.created_at)
+        select(ProjectMessage)
+        .where(ProjectMessage.project_id == uuid.UUID(project_id))
+        .order_by(ProjectMessage.created_at)
     )
     msgs = result.scalars().all()
     return [{"id": str(m.id), "sender": m.sender, "sender_type": m.sender_type,
              "content": m.content, "created_at": m.created_at.isoformat()} for m in msgs]
 
-
-class RecruitDecision(BaseModel):
-    approved: bool
-    worker: Optional[dict] = None  # name, role, llm_model, capabilities
-
-@router.post("/{team_id}/recruit")
-async def decide_recruit(team_id: str, data: RecruitDecision):
-    """พี่ approve หรือ decline recruit request"""
-    if data.approved and data.worker:
-        resolve_recruit(team_id, data.worker)
-    else:
-        resolve_recruit(team_id, None)
-    return {"success": True}
-
-
-@router.websocket("/{team_id}/ws")
-async def workspace_ws(websocket: WebSocket, team_id: str, db: AsyncSession = Depends(get_db)):
+@router.websocket("/{project_id}/ws")
+async def workspace_ws(websocket: WebSocket, project_id: str, db: AsyncSession = Depends(get_db)):
     await websocket.accept()
-    if team_id not in connections:
-        connections[team_id] = []
-    connections[team_id].append(websocket)
+    if project_id not in connections:
+        connections[project_id] = []
+    connections[project_id].append(websocket)
     try:
         while True:
             data = await websocket.receive_text()
@@ -58,18 +40,17 @@ async def workspace_ws(websocket: WebSocket, team_id: str, db: AsyncSession = De
 
             async def broadcast(msg_data):
                 dead = []
-                for ws in connections.get(team_id, []):
+                for ws in connections.get(project_id, []):
                     try:
                         await ws.send_text(json.dumps(msg_data))
                     except Exception:
                         dead.append(ws)
                 for ws in dead:
-                    connections[team_id].remove(ws)
+                    connections[project_id].remove(ws)
 
-            # Save & broadcast user message
             display_task = payload.get("task", "") or "(แนบไฟล์)"
-            user_msg = WorkspaceMessage(
-                team_id=uuid.UUID(team_id),
+            user_msg = ProjectMessage(
+                project_id=uuid.UUID(project_id),
                 sender="พี่การ์ด",
                 sender_type="user",
                 content=display_task
@@ -84,8 +65,8 @@ async def workspace_ws(websocket: WebSocket, team_id: str, db: AsyncSession = De
                 "created_at": user_msg.created_at.isoformat()
             })
 
-            await run_team_task(task, uuid.UUID(team_id), db, broadcast)
+            await run_project_task(task, uuid.UUID(project_id), db, broadcast)
 
     except WebSocketDisconnect:
-        if team_id in connections:
-            connections[team_id] = [c for c in connections[team_id] if c != websocket]
+        if project_id in connections:
+            connections[project_id] = [c for c in connections[project_id] if c != websocket]

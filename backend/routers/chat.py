@@ -1,28 +1,32 @@
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from core.database import get_db
-from models.models import ChatMessage, Team, Worker, YujinConfig, Room
+from models.models import ChatMessage, Project, YujinConfig
 from services.yujin_agent import process_message
 from core.config import settings
-import json, uuid
+import json
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
-@router.get("/history/{room_id}")
-async def get_history(room_id: str, db: AsyncSession = Depends(get_db)):
+@router.get("/history")
+async def get_history(db: AsyncSession = Depends(get_db)):
     result = await db.execute(
-        select(ChatMessage)
-        .where(ChatMessage.room_id == uuid.UUID(room_id))
-        .order_by(ChatMessage.created_at)
+        select(ChatMessage).where(ChatMessage.room_id.is_(None)).order_by(ChatMessage.created_at)
     )
     messages = result.scalars().all()
     return [{"id": str(m.id), "role": m.role, "content": m.content,
              "model_used": m.model_used, "metadata": m.extra_data,
              "created_at": m.created_at.isoformat()} for m in messages]
 
-@router.websocket("/ws/{room_id}")
-async def websocket_chat(websocket: WebSocket, room_id: str, db: AsyncSession = Depends(get_db)):
+@router.delete("/clear")
+async def clear_history(db: AsyncSession = Depends(get_db)):
+    await db.execute(delete(ChatMessage).where(ChatMessage.room_id.is_(None)))
+    await db.commit()
+    return {"success": True}
+
+@router.websocket("/ws")
+async def websocket_chat(websocket: WebSocket, db: AsyncSession = Depends(get_db)):
     await websocket.accept()
     try:
         while True:
@@ -30,42 +34,33 @@ async def websocket_chat(websocket: WebSocket, room_id: str, db: AsyncSession = 
             payload = json.loads(data)
             user_msg = payload.get("message", "")
 
-            # save user message
-            user_record = ChatMessage(role="user", content=user_msg, room_id=uuid.UUID(room_id))
+            user_record = ChatMessage(role="user", content=user_msg, room_id=None)
             db.add(user_record)
             await db.commit()
 
-            # ดึง chat history ของห้องนี้ (ล่าสุด 20 ข้อความ)
             history_result = await db.execute(
                 select(ChatMessage)
-                .where(ChatMessage.room_id == uuid.UUID(room_id))
+                .where(ChatMessage.room_id.is_(None))
                 .order_by(ChatMessage.created_at.desc())
                 .limit(20)
             )
             history = list(reversed(history_result.scalars().all()))
             chat_history = [{"role": m.role, "content": m.content} for m in history]
 
-            # existing teams
-            teams_result = await db.execute(select(Team).where(Team.status == "active"))
-            teams = teams_result.scalars().all()
-            teams_data = []
-            for t in teams:
-                workers_result = await db.execute(select(Worker).where(Worker.team_id == t.id))
-                workers = workers_result.scalars().all()
-                teams_data.append({
-                    "name": t.name, "description": t.description,
-                    "workers": [{"name": w.name, "role": w.role} for w in workers]
-                })
+            # existing projects for context
+            proj_result = await db.execute(select(Project).where(Project.status == "active"))
+            projects = proj_result.scalars().all()
+            projects_data = [{"name": p.name, "description": p.description} for p in projects]
 
             config_result = await db.execute(select(YujinConfig).where(YujinConfig.id == 1))
             config = config_result.scalar_one_or_none()
             yujin_model = config.llm_model if config else settings.yujin_llm_model
 
-            result = await process_message(user_msg, chat_history, teams_data, yujin_model, db)
+            result = await process_message(user_msg, chat_history, projects_data, yujin_model, db)
 
             yujin_record = ChatMessage(
                 role="yujin", content=result["text"],
-                model_used=yujin_model, room_id=uuid.UUID(room_id),
+                model_used=yujin_model, room_id=None,
                 extra_data={"proposal": result["proposal"]}
             )
             db.add(yujin_record)
