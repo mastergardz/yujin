@@ -87,7 +87,12 @@ async def run_worker_with_tools(member: ProjectMember, worker_task: str, big_tas
         context_block = "\n\n## ผลงานจากเพื่อนร่วมทีมที่ส่งมาให้คุณใช้:\n"
         for name, result in prior_results.items():
             is_image = getattr(member, "llm_model", "") in IMAGE_MODEL_IDS
-            snippet = result[:800] + "..." if is_image and len(result) > 800 else result
+            if is_image and len(result) > 1200:
+                # ตัดจากท้ายเพื่อได้เนื้อหาจริง ไม่ใช่ intro
+                snippet = "...(ข้ามส่วนนำ)...
+" + result[-1200:]
+            else:
+                snippet = result
             context_block += f"### {name}:\n{snippet}\n\n"
         task_with_context = worker_task + context_block
 
@@ -335,12 +340,20 @@ async def run_project_task(task: str, project_id, db: AsyncSession, broadcast_fn
             return results[0]["result"]
 
         summary_parts = "\n\n".join([f"**{r['worker']}:** {r['result']}" for r in results])
+        # สรุปผลงานสั้น (ไม่เกิน 300 chars ต่อคน) สำหรับ summary prompt
+        summary_short = "\n\n".join([
+            f"**{r['worker']}:** {r['result'][:300]}{'...' if len(r['result']) > 300 else ''}"
+            for r in results
+        ])
         summary_prompt = f"""งานต้นฉบับ: {task}
 
-ผลงาน:
-{summary_parts}
+ผลสรุปจากทีม:
+{summary_short}
 
-ส่งงานให้พี่เลยค่ะ ขึ้นต้นว่า "ส่งงานค่ะ พี่" แล้วนำเสนอผลงานจริงๆ"""
+ส่งงานให้พี่เลยค่ะ ขึ้นต้นว่า "ส่งงานค่ะ พี่"
+- ถ้ามีไฟล์ download หรือรูปภาพในผลงาน ให้ระบุ link ให้ชัดเจน
+- ถ้ามีบทความ ให้บอกว่าบทความเสร็จแล้วพร้อม link download (ถ้ามี) ไม่ต้อง paste เนื้อหาทั้งหมดซ้ำ
+- สรุปสั้นๆ ว่าแต่ละคนส่งอะไรมา"""
 
         await broadcast_typing("ยูจิน", "yujin")
         final, usage = await call_llm_with_usage(
@@ -355,7 +368,10 @@ async def run_project_task(task: str, project_id, db: AsyncSession, broadcast_fn
         if cost_msg:
             await broadcast("ยูจิน", "yujin", cost_msg)
 
-        review_parts = "\n".join([f"- **{r['worker']}**: {r['task']} | {r['result'][:200]}" for r in results])
+        review_parts = "\n".join([
+            f"- **{r['worker']}**: งาน: {r['task']} | ผลงาน ({len(r['result'])} chars): {r['result'][:500]}{'...' if len(r['result']) > 500 else ''}"
+            for r in results
+        ])
         review_prompt = f"""งาน: {task}\n\nผลงาน:\n{review_parts}\n\nประเมินผล:\n📊 **ประเมินผลรอบนี้**\n| Worker | ⭐ | Workload | ความเห็น |\n|--------|-----|----------|---------|"""
 
         await broadcast_typing("ยูจิน", "yujin")
