@@ -3,7 +3,7 @@ import re
 import asyncio
 from services.llm import call_llm_with_usage
 from services.worker_tools import TOOLS, shell_tool, db_tool, file_tool, image_tool
-from models.models import WorkspaceMessage, Worker, Team
+from models.models import WorkspaceMessage, Worker, Team, WorkerTemplate
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from datetime import datetime
@@ -295,6 +295,10 @@ async def run_team_task(task: str, team_id, db: AsyncSession, broadcast_fn=None)
     workers_result = await db.execute(select(Worker).where(Worker.team_id == team.id))
     workers = workers_result.scalars().all()
 
+    # load worker library templates for recruit suggestions
+    templates_result = await db.execute(select(WorkerTemplate).order_by(WorkerTemplate.created_at))
+    library_templates = templates_result.scalars().all()
+
     async def broadcast(sender, sender_type, content):
         msg = await save_ws_msg(db, team.id, sender, sender_type, content)
         if broadcast_fn:
@@ -322,9 +326,22 @@ async def run_team_task(task: str, team_id, db: AsyncSession, broadcast_fn=None)
         for w in workers
     ])
 
-    FEMALE_NAMES = ["มายด์", "ฝน", "เจน", "โบว์", "นิว", "แพร", "มิ้นท์", "พลอย", "ออม", "เฟิร์น", "ปิ่น", "ขิม"]
-    used_names = [w.name for w in workers]
-    available_names = [n for n in FEMALE_NAMES if n not in used_names]
+    # build library info for prompt
+    current_names = {w.name for w in workers}
+    lib_not_in_team = [t for t in library_templates if t.name not in current_names]
+    if lib_not_in_team:
+        library_lines = "\n".join([
+            f"- {t.name} ({t.role})" + (f" [tools: {', '.join(t.capabilities)}]" if t.capabilities else "")
+            for t in lib_not_in_team
+        ])
+        recruit_instruction = (
+            "ถ้างานต้องการ worker เพิ่ม ให้เลือกจาก Worker Library ก่อนเป็นลำดับแรก:\n"
+            + library_lines
+            + "\n\nถ้าเลือกจาก library ให้ใส่ \"from_library\": true และ \"name\" ตรงกับชื่อใน library"
+            + "\nถ้าไม่มีใน library ที่เหมาะสม ค่อยสร้างใหม่ โดยใช้ชื่อจากรายการ: มายด์, ฝน, เจน, โบว์, นิว, แพร, มิ้นท์"
+        )
+    else:
+        recruit_instruction = "ถ้างานต้องการ worker เพิ่ม ให้สร้างใหม่ โดยใช้ชื่อจากรายการ: มายด์, ฝน, เจน, โบว์, นิว, แพร, มิ้นท์"
 
     plan_prompt = f"""งานที่ได้รับ: {task}
 
@@ -332,7 +349,7 @@ async def run_team_task(task: str, team_id, db: AsyncSession, broadcast_fn=None)
 {workers_info}
 
 วิเคราะห์งานและมอบหมาย subtask ให้แต่ละคน
-ถ้างานต้องการ skill ที่ทีมปัจจุบันไม่มี ให้เสนอ recruit worker เพิ่มได้ 1 คน (ไม่บังคับ)
+{recruit_instruction}
 
 ตอบในรูปแบบ JSON:
 {{
@@ -342,11 +359,12 @@ async def run_team_task(task: str, team_id, db: AsyncSession, broadcast_fn=None)
   ],
   "recruit": {{
     "needed": true,
-    "name": "ชื่อผู้หญิงไทยจากรายการ: {', '.join(available_names[:5])}",
+    "from_library": true,
+    "name": "ชื่อที่ตรงกับ library หรือชื่อใหม่",
     "role": "บทบาทที่ต้องการ",
     "llm_model": "gemini-2.5-flash",
     "capabilities": [],
-    "reason": "เหตุผลสั้นๆ ว่าทำไมต้องการ"
+    "reason": "เหตุผลสั้นๆ"
   }}
 }}
 
@@ -375,11 +393,36 @@ async def run_team_task(task: str, team_id, db: AsyncSession, broadcast_fn=None)
         recruit_name = recruit.get("name", "นิว")
         recruit_role = recruit.get("role", "")
         recruit_reason = recruit.get("reason", "")
-        recruit_model = recruit.get("llm_model", "gemini-2.5-flash")
         recruit_caps = recruit.get("capabilities", [])
 
+        # ดึงจาก library ถ้า name ตรงกัน
+        matched_template = None
+        for tmpl in library_templates:
+            if tmpl.name == recruit_name:
+                matched_template = tmpl
+                break
+
+        if matched_template:
+            recruit_role = matched_template.role or recruit_role
+            recruit_model = matched_template.llm_model or "gemini-2.5-flash"
+            recruit_caps = matched_template.capabilities or recruit_caps
+            recruit_avatar = matched_template.avatar
+            recruit_personality = matched_template.personality
+            recruit_speech_style = matched_template.speech_style
+            recruit_skills = matched_template.skills or []
+            recruit_system_prompt = matched_template.system_prompt
+            source_label = "📚 จาก Worker Library"
+        else:
+            recruit_model = recruit.get("llm_model", "gemini-2.5-flash")
+            recruit_avatar = None
+            recruit_personality = None
+            recruit_speech_style = None
+            recruit_skills = []
+            recruit_system_prompt = None
+            source_label = "✨ สร้างใหม่"
+
         await broadcast("Yujin", "yujin",
-            f"⚠️ หนูอยากเพิ่ม **{recruit_name}** เข้าทีมด้วยค่ะ\n"
+            f"⚠️ หนูอยากเพิ่ม **{recruit_name}** เข้าทีมด้วยค่ะ ({source_label})\n"
             f"บทบาท: {recruit_role}\n"
             f"เหตุผล: {recruit_reason}"
         )
@@ -392,24 +435,30 @@ async def run_team_task(task: str, team_id, db: AsyncSession, broadcast_fn=None)
                     "llm_model": recruit_model,
                     "capabilities": recruit_caps,
                     "reason": recruit_reason,
+                    "from_library": matched_template is not None,
                 }
             })
 
         approved_worker = await wait_recruit_approval(str(team.id))
         if approved_worker:
-            import uuid as _uuid
             new_worker = Worker(
                 team_id=team.id,
                 name=approved_worker["name"],
                 role=approved_worker["role"],
-                llm_model=approved_worker["llm_model"],
-                capabilities=approved_worker.get("capabilities", []),
+                llm_model=approved_worker.get("llm_model", recruit_model),
+                capabilities=approved_worker.get("capabilities", recruit_caps),
+                avatar=recruit_avatar,
+                personality=recruit_personality,
+                speech_style=recruit_speech_style,
+                skills=recruit_skills,
+                system_prompt=recruit_system_prompt,
             )
             db.add(new_worker)
             await db.commit()
             await db.refresh(new_worker)
             workers = list(workers) + [new_worker]
-            await broadcast("Yujin", "yujin", f"✅ เพิ่ม **{new_worker.name}** เข้าทีมแล้วค่ะ พี่")
+            src_tag = " (จาก Library)" if matched_template else ""
+            await broadcast("Yujin", "yujin", f"✅ เพิ่ม **{new_worker.name}**{src_tag} เข้าทีมแล้วค่ะ พี่")
             if broadcast_fn:
                 await broadcast_fn({"type": "team_updated"})
         else:
