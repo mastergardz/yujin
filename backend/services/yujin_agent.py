@@ -61,6 +61,8 @@ YUJIN_SYSTEM = """คุณชื่อ ยูจิน เป็นเลขา
 
 {model_guide}
 
+{library_section}
+
 เมื่อต้องการเสนอแผน team ตอบในรูปแบบนี้:
 <TEAM_PROPOSAL>
 {{
@@ -68,7 +70,7 @@ YUJIN_SYSTEM = """คุณชื่อ ยูจิน เป็นเลขา
   "description": "คำอธิบายว่าทีมนี้ทำงานอะไร",
   "workers": [
     {{
-      "name": "ชื่อผู้หญิงไทย",
+      "name": "ชื่อ worker",
       "role": "บทบาทและความรับผิดชอบ",
       "llm_model": "model id เต็มตรงๆ",
       "capabilities": ["shell_tool", "file_tool"]
@@ -77,14 +79,36 @@ YUJIN_SYSTEM = """คุณชื่อ ยูจิน เป็นเลขา
 }}
 </TEAM_PROPOSAL>
 กฎ:
+- **ชื่อ worker ต้องเลือกจาก Worker Library ก่อนเสมอ** ถ้ามีคนที่เหมาะสมใน library
+- ถ้าเลือกจาก library ให้ใช้ชื่อตรงๆ ตามที่อยู่ใน library (ระบบจะดึง persona และ skills มาให้อัตโนมัติ)
+- ถ้าไม่มีใน library ที่เหมาะสม ค่อยสร้างใหม่ โดยใช้ชื่อผู้หญิงไทย เช่น มายด์, ฝน, เจน, โบว์, นิว, แพร, มิ้นท์, พลอย, ออม, เฟิร์น, ปิ่น, ขิม
 - ชื่อทีม: ต้องสื่อถึงงานที่ทำ ห้ามใช้ Team_Yujin หรือชื่อกว้างๆ
-- ชื่อ worker: ต้องเป็นชื่อผู้หญิงไทย เช่น มายด์, ฝน, เจน, โบว์, นิว, แพร, มิ้นท์, พลอย, ออม, เฟิร์น, ปิ่น, ขิม
 - llm_model: ต้องเป็น id เต็ม ห้ามย่อ
 - capabilities: ใส่เฉพาะ tools ที่จำเป็น ถ้าไม่ต้องการ ใส่ []
 แล้วตามด้วยคำอธิบายสั้นๆ ว่าจะทำอะไร และบอกพี่ว่าสามารถไปสั่งงานได้ที่หน้า Workspace เลยค่ะ"""
 
 async def process_message(user_message: str, chat_history: list, existing_teams: list, yujin_model: str = None, db=None) -> dict:
-    system = YUJIN_SYSTEM.format(model_guide=build_model_guide())
+    # load worker library for context
+    library_section = ""
+    if db:
+        try:
+            from models.models import WorkerTemplate
+            from sqlalchemy import select
+            result = await db.execute(select(WorkerTemplate).order_by(WorkerTemplate.created_at))
+            templates = result.scalars().all()
+            if templates:
+                lines = ["## Worker Library — เลือกจากที่นี่ก่อนสร้างใหม่\n"]
+                for t in templates:
+                    caps = f" [tools: {', '.join(t.capabilities)}]" if t.capabilities else ""
+                    lines.append(f"- **{t.name}** — {t.role}{caps}")
+                library_section = "\n".join(lines)
+        except Exception:
+            pass
+
+    system = YUJIN_SYSTEM.format(
+        model_guide=build_model_guide(),
+        library_section=library_section
+    )
 
     history_text = ""
     if len(chat_history) > 1:
