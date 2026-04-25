@@ -71,14 +71,23 @@ def build_tool_instructions(capabilities: list) -> str:
         return ""
     return (
         "\n\nคุณมี tools ต่อไปนี้:\n" + "\n".join(tool_docs) +
-        "\n\nวิธีใช้: ตอบด้วย ```tool_call\\n{\"tool\": \"ชื่อ\", \"params\": {...}}\\n``` แล้วรอผล"
+        "\n\nวิธีใช้: ตอบด้วย ```tool_call\n{\"tool\": \"ชื่อ\", \"params\": {...}}\n``` แล้วรอผล"
     )
 
 IMAGE_MODEL_IDS = {"gemini-2.5-flash-image", "gemini-3.1-flash-image-preview", "gemini-3-pro-image-preview"}
 
 async def run_worker_with_tools(member: ProjectMember, worker_task: str, big_task: str,
-                                 usage_log: list, broadcast_fn=None, broadcast_typing_fn=None, db=None) -> str:
+                                 usage_log: list, broadcast_fn=None, broadcast_typing_fn=None,
+                                 db=None, prior_results: dict = None) -> str:
     capabilities = member.capabilities or []
+
+    # ถ้ามี prior_results (ผลงานจาก worker ที่ตัวเองต้อง depends on) ให้ inject เข้า task
+    task_with_context = worker_task
+    if prior_results:
+        context_block = "\n\n## ผลงานจากเพื่อนร่วมทีมที่ส่งมาให้คุณใช้:\n"
+        for name, result in prior_results.items():
+            context_block += f"### {name}:\n{result}\n\n"
+        task_with_context = worker_task + context_block
 
     if member.llm_model in IMAGE_MODEL_IDS and "image_tool" in capabilities:
         if broadcast_typing_fn:
@@ -92,7 +101,7 @@ async def run_worker_with_tools(member: ProjectMember, worker_task: str, big_tas
                     await broadcast_typing_fn(member.name, "worker")
         t = asyncio.create_task(keep_typing())
         try:
-            tool_result = await image_tool(prompt=worker_task, filename="image", model=member.llm_model, db=db)
+            tool_result = await image_tool(prompt=task_with_context, filename="image", model=member.llm_model, db=db)
         finally:
             t.cancel()
         if tool_result.get("success") and tool_result.get("download_url"):
@@ -126,7 +135,7 @@ async def run_worker_with_tools(member: ProjectMember, worker_task: str, big_tas
     )
 
     user_prompt = (
-        f"บทบาทของคุณ: {member.role}\nงานที่ได้รับ: {worker_task}\n"
+        f"บทบาทของคุณ: {member.role}\nงานที่ได้รับ: {task_with_context}\n"
         f"บริบท: เป็นส่วนหนึ่งของงานใหญ่: {big_task}\n\n"
         f"สำคัญมาก: ส่งมอบผลงานจริงๆ เลย อย่าแค่บอกว่าจะทำอะไร"
     )
@@ -206,20 +215,25 @@ async def run_project_task(task: str, project_id, db: AsyncSession, broadcast_fn
 สมาชิกใน project:
 {members_info}
 
-วิเคราะห์งานและมอบหมาย subtask ให้แต่ละคน
+วิเคราะห์งานแล้วมอบหมาย subtask ให้แต่ละคน พร้อมระบุว่างานใดต้องรอผลจากใครก่อน (dependency)
 
-ตอบในรูปแบบ JSON:
+ตัวอย่าง:
+- งาน parallel: researcher หลายคนค้นคนละเรื่อง, แปลหลายภาษาพร้อมกัน → depends_on: null
+- งาน sequential: writer เขียนก่อน แล้ว designer สร้างภาพประกอบ → depends_on: "ชื่อ writer"
+
+ตอบในรูปแบบ JSON เท่านั้น:
 {{
-  "summary": "สรุปแผนงานสั้นๆ",
+  "summary": "สรุปแผนงานและอธิบายว่างานไหน parallel ไหน sequential",
   "assignments": [
-    {{"worker": "ชื่อ worker", "task": "งานที่มอบหมาย"}}
+    {{"worker": "ชื่อ", "task": "งานที่มอบหมาย", "depends_on": null}},
+    {{"worker": "ชื่อ", "task": "งานที่ต้องรอผลจากคนอื่น", "depends_on": "ชื่อ worker ที่ต้องรอ"}}
   ]
 }}"""
 
-    await broadcast_typing("Yujin", "yujin")
+    await broadcast_typing("ยูจิน", "yujin")
     plan_text, usage = await call_llm_with_usage(
         plan_prompt,
-        "คุณชื่อ ยูจิน เป็นเลขา AI ผู้หญิง กำลังวางแผนงาน ตอบเป็น JSON เท่านั้น",
+        "คุณชื่อ ยูจิน เป็นเลขา AI ผู้หญิง กำลังวางแผนงาน ตอบเป็น JSON เท่านั้น ห้ามมี text อื่น",
         db=db
     )
     usage_log.append(usage)
@@ -229,34 +243,90 @@ async def run_project_task(task: str, project_id, db: AsyncSession, broadcast_fn
         end = plan_text.rindex("}") + 1
         plan = json.loads(plan_text[start:end])
     except Exception:
-        plan = {"summary": plan_text, "assignments": [{"worker": members[0].name if members else "Worker", "task": task}]}
+        plan = {"summary": plan_text, "assignments": [{"worker": members[0].name if members else "Worker", "task": task, "depends_on": None}]}
 
-    await broadcast("Yujin", "yujin", f"รับงานแล้วค่ะ — {plan.get('summary', task)}\n\nกำลังมอบหมายงานให้ทีม...")
+    summary = plan.get('summary', task)
+    await broadcast("ยูจิน", "yujin", f"รับงานแล้วค่ะ — {summary}\n\nกำลังมอบหมายงานให้ทีม...")
 
+    assignments = plan.get("assignments", [])
+
+    # ── Dependency-aware execution ──────────────────────────────────────────
+    # completed: worker_name -> result string
+    completed: dict[str, str] = {}
+
+    # รัน assignments โดยใช้ topological order ตาม depends_on
+    # งานที่ depends_on null หรือ depends_on worker ที่เสร็จแล้ว → รันได้
+    # ถ้ามีหลายงานพร้อมกัน → รัน parallel
+
+    remaining = list(assignments)
     results = []
-    for assignment in plan.get("assignments", []):
-        worker_name = assignment["worker"]
-        worker_task = assignment["task"]
-        member = next((m for m in members if m.name == worker_name), members[0] if members else None)
-        if not member:
-            continue
 
-        await broadcast("Yujin", "yujin", f"@{worker_name} — {worker_task}")
+    while remaining:
+        # หางานที่ ready (depends_on เป็น null หรือ depends_on อยู่ใน completed แล้ว)
+        ready = []
+        waiting = []
+        for a in remaining:
+            dep = a.get("depends_on")
+            if dep is None or dep in completed:
+                ready.append(a)
+            else:
+                waiting.append(a)
 
-        worker_result = await run_worker_with_tools(
-            member=member, worker_task=worker_task, big_task=task,
-            usage_log=usage_log, broadcast_fn=broadcast_msg,
-            broadcast_typing_fn=broadcast_typing, db=db,
-        )
-        await broadcast(worker_name, "worker", worker_result)
-        results.append({"worker": worker_name, "task": worker_task, "result": worker_result})
+        if not ready:
+            # circular dependency หรือ depends_on ชื่อผิด — รัน remaining ทั้งหมดเลย
+            ready = remaining
+            waiting = []
+
+        # แจ้งการมอบหมายงาน
+        for a in ready:
+            dep = a.get("depends_on")
+            dep_note = f" (ใช้ผลงานจาก {dep})" if dep and dep in completed else ""
+            await broadcast("ยูจิน", "yujin", f"@{a['worker']} — {a['task']}{dep_note}")
+
+        # รัน ready assignments — parallel ถ้ามีหลายคน
+        async def run_one(assignment):
+            worker_name = assignment["worker"]
+            worker_task = assignment["task"]
+            dep = assignment.get("depends_on")
+
+            member = next((m for m in members if m.name == worker_name), members[0] if members else None)
+            if not member:
+                return worker_name, worker_task, f"ไม่พบ member: {worker_name}"
+
+            # ส่ง prior result เป็น context ถ้า depends_on มีผลแล้ว
+            prior = {dep: completed[dep]} if dep and dep in completed else None
+
+            result = await run_worker_with_tools(
+                member=member, worker_task=worker_task, big_task=task,
+                usage_log=usage_log, broadcast_fn=broadcast_msg,
+                broadcast_typing_fn=broadcast_typing, db=db,
+                prior_results=prior,
+            )
+            return worker_name, worker_task, result
+
+        if len(ready) == 1:
+            worker_name, worker_task, worker_result = await run_one(ready[0])
+            await broadcast(worker_name, "worker", worker_result)
+            completed[worker_name] = worker_result
+            results.append({"worker": worker_name, "task": worker_task, "result": worker_result})
+        else:
+            # parallel — รันพร้อมกัน แต่ broadcast แยกกัน
+            tasks = [run_one(a) for a in ready]
+            batch = await asyncio.gather(*tasks)
+            for worker_name, worker_task, worker_result in batch:
+                await broadcast(worker_name, "worker", worker_result)
+                completed[worker_name] = worker_result
+                results.append({"worker": worker_name, "task": worker_task, "result": worker_result})
+
+        remaining = waiting
+    # ────────────────────────────────────────────────────────────────────────
 
     if results:
         all_images = all("![" in r["result"] or "/api/files/download/" in r["result"] for r in results)
         if all_images:
             cost_msg = format_cost_summary(usage_log)
             if cost_msg:
-                await broadcast("Yujin", "yujin", cost_msg)
+                await broadcast("ยูจิน", "yujin", cost_msg)
             return results[0]["result"]
 
         summary_parts = "\n\n".join([f"**{r['worker']}:** {r['result']}" for r in results])
@@ -267,30 +337,30 @@ async def run_project_task(task: str, project_id, db: AsyncSession, broadcast_fn
 
 ส่งงานให้พี่เลยค่ะ ขึ้นต้นว่า "ส่งงานค่ะ พี่" แล้วนำเสนอผลงานจริงๆ"""
 
-        await broadcast_typing("Yujin", "yujin")
+        await broadcast_typing("ยูจิน", "yujin")
         final, usage = await call_llm_with_usage(
             summary_prompt,
             "คุณชื่อ ยูจิน เลขา AI ผู้หญิง เรียกตัวเองว่าหนู เรียกผู้ใช้ว่าพี่ พูดสั้นกระชับ",
             db=db
         )
         usage_log.append(usage)
-        await broadcast("Yujin", "yujin", final)
+        await broadcast("ยูจิน", "yujin", final)
 
         cost_msg = format_cost_summary(usage_log)
         if cost_msg:
-            await broadcast("Yujin", "yujin", cost_msg)
+            await broadcast("ยูจิน", "yujin", cost_msg)
 
         review_parts = "\n".join([f"- **{r['worker']}**: {r['task']} | {r['result'][:200]}" for r in results])
         review_prompt = f"""งาน: {task}\n\nผลงาน:\n{review_parts}\n\nประเมินผล:\n📊 **ประเมินผลรอบนี้**\n| Worker | ⭐ | Workload | ความเห็น |\n|--------|-----|----------|---------|"""
 
-        await broadcast_typing("Yujin", "yujin")
+        await broadcast_typing("ยูจิน", "yujin")
         review, usage = await call_llm_with_usage(
             review_prompt,
             "คุณชื่อ ยูจิน ประเมินผลงานตรงไปตรงมา ไม่อวย ถ้าไม่ดีบอกตรงๆ",
             db=db
         )
         usage_log.append(usage)
-        await broadcast("Yujin", "yujin", review)
+        await broadcast("ยูจิน", "yujin", review)
         return final
 
     return "ทำงานเสร็จแล้วค่ะ"

@@ -101,7 +101,7 @@ export default function Chat() {
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', flex: 1 }}>
       {/* topbar */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 20px', borderBottom: '1px solid #e5e5ea', background: 'white' }}>
-        <span style={{ fontWeight: 600, fontSize: '0.95rem' }}>💬 สั่งงาน Yujin</span>
+        <span style={{ fontWeight: 600, fontSize: '0.95rem' }}>💬 สั่งงาน ยูจิน</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <span style={{ fontSize: '0.78rem', color: connected ? '#10b981' : '#ef4444' }}>
             {connected ? '🟢 Connected' : '🔴 Reconnecting...'}
@@ -117,7 +117,7 @@ export default function Chat() {
         {messages.length === 0 && (
           <div style={{ textAlign: 'center', marginTop: 80, color: '#aaa' }}>
             <YujinAvatar size={72} />
-            <div style={{ marginTop: 12, fontSize: '1rem' }}>สวัสดีค่ะ พี่การ์ด<br />สั่งงาน Yujin ได้เลยค่ะ</div>
+            <div style={{ marginTop: 12, fontSize: '1rem' }}>สวัสดีค่ะ พี่การ์ด<br />สั่งงาน ยูจิน ได้เลยค่ะ</div>
           </div>
         )}
         {messages.map((m, i) => (
@@ -176,7 +176,8 @@ export default function Chat() {
         {pending && (
           <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
             <YujinAvatar size={32} />
-            <div style={{ background: 'white', border: '1px solid #e5e5ea', borderRadius: '18px 18px 18px 4px', padding: '12px 16px' }}>
+            <div style={{ background: 'white', border: '1px solid #e5e5ea', borderRadius: '18px 18px 18px 4px', padding: '12px 16px', minWidth: 120 }}>
+              <div style={{ fontSize: '0.75rem', color: '#9ca3af', marginBottom: 6 }}>ยูจินกำลังคิด...</div>
               <div className="typing"><span /><span /><span /></div>
             </div>
           </div>
@@ -191,7 +192,7 @@ export default function Chat() {
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={handleKey}
-          placeholder="สั่งงาน Yujin... (Enter ส่ง, Shift+Enter ขึ้นบรรทัดใหม่)"
+          placeholder="สั่งงาน ยูจิน... (Enter ส่ง, Shift+Enter ขึ้นบรรทัดใหม่)"
           disabled={!connected || pending}
           rows={3}
           style={{ flex: 1, resize: 'none', border: '1px solid #e5e5ea', borderRadius: 12, padding: '10px 14px', fontSize: '0.88rem', fontFamily: 'inherit', outline: 'none' }}

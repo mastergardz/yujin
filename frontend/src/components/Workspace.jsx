@@ -218,7 +218,7 @@ function ProjectRoom({ project, onBack }) {
           )
         })}
         {(running || typingInfo) && (() => {
-          const who = typingInfo || { sender: 'Yujin', senderType: 'yujin' }
+          const who = typingInfo || { sender: 'ยูจิน', senderType: 'yujin' }
           const isYujin = who.senderType === 'yujin'
           const color = !isYujin ? getWorkerColor(who.sender, memberNames) : null
           const borderColor = isYujin ? '#7c3aed' : (color?.border || '#6b7280')
@@ -300,7 +300,7 @@ export default function Workspace() {
         <div style={{ textAlign: 'center', color: '#aaa', marginTop: 60 }}>
           <div style={{ fontSize: '3rem' }}>🗂️</div>
           <div>ยังไม่มี project ค่ะ</div>
-          <div style={{ fontSize: '0.82rem', marginTop: 8 }}>สั่งงาน Yujin ที่หน้า Chat แล้ว Approve proposal เพื่อสร้าง project</div>
+          <div style={{ fontSize: '0.82rem', marginTop: 8 }}>สั่งงาน ยูจิน ที่หน้า Chat แล้ว Approve proposal เพื่อสร้าง project</div>
         </div>
       )}
 
