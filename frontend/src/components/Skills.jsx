@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import JSZip from 'jszip'
+import { marked } from 'marked'
 
 const LIBRARY_URL = 'http://119.59.103.122:8040'
 
@@ -415,6 +416,8 @@ function SectionDivider({ isLibrary, count }) {
 
 
 // ─── AI Creator ───────────────────────────────────────────────────────────────
+marked.setOptions({ breaks: true, gfm: true })
+
 const STORAGE_KEY_YUJIN = 'yujin_skill_creator_history'
 
 function parseSkillName(text) {
@@ -488,7 +491,10 @@ function AIChatBubble({ msg, onSaveToYujin }) {
             }
           </div>
         ))}
-        <span style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</span>
+        {msg.role === 'assistant'
+          ? <div className="ai-md" dangerouslySetInnerHTML={{ __html: marked.parse(msg.content) }} />
+          : <span style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</span>
+        }
         {msg.role === 'assistant' && (
           <div style={{ display: 'flex', gap: 5, marginTop: 10, flexWrap: 'wrap' }}>
             {isSkill && (
