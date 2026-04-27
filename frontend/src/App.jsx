@@ -35,7 +35,7 @@ export default function App() {
         <div className="sidebar-logo">
           <YujinAvatar size={36} />
           <div>
-            <div className="logo-name">Yujin</div>
+            <div className="logo-name">AI Conductor</div>
             <div className="logo-sub">{modelLabel}</div>
           </div>
         </div>

@@ -86,18 +86,161 @@ function Avatar({ sender, senderType, memberNames, members }) {
 
 const ACCEPT = 'image/*,.txt,.csv,.json,.md,.py,.js,.ts,.jsx,.tsx,.html,.css,.pdf,.xlsx,.xls,.docx'
 
-function ProjectRoom({ project, onBack }) {
+// ─── Create / Edit Modal ─────────────────────────────────────────────────────
+function ProjectFormModal({ project, onClose, onSaved }) {
+  const [name, setName] = useState(project?.name || '')
+  const [desc, setDesc] = useState(project?.description || '')
+  const [library, setLibrary] = useState([])
+  const [selectedIds, setSelectedIds] = useState(
+    (project?.members || []).map(m => m.template_id).filter(Boolean)
+  )
+  const [saving, setSaving] = useState(false)
+  const isEdit = !!project
+
+  useEffect(() => {
+    fetch('/api/worker-library/').then(r => r.json()).then(setLibrary)
+  }, [])
+
+  const toggleWorker = (id) => {
+    setSelectedIds(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    )
+  }
+
+  const save = async () => {
+    if (!name.trim()) return
+    setSaving(true)
+    try {
+      if (isEdit) {
+        // 1. update name/desc
+        await fetch(`/api/projects/${project.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, description: desc }),
+        })
+        // 2. sync members: only touch members that have a template_id (library-backed)
+        const currentIds = (project.members || []).map(m => ({ id: m.id, tid: m.template_id }))
+        // only remove library-backed members that were unticked
+        const toRemove = currentIds.filter(x => x.tid && !selectedIds.includes(x.tid))
+        // only add ticked ids not already present
+        const toAdd = selectedIds.filter(tid => !currentIds.some(x => x.tid === tid))
+        await Promise.all([
+          ...toRemove.map(x => fetch(`/api/projects/${project.id}/members/${x.id}`, { method: 'DELETE' })),
+          ...toAdd.map(tid => fetch(`/api/projects/${project.id}/members`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ template_id: tid }),
+          })),
+        ])
+      } else {
+        // create new
+        await fetch('/api/projects/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, description: desc, member_template_ids: selectedIds }),
+        })
+      }
+      onSaved()
+      onClose()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ background: 'white', borderRadius: 18, padding: 28, width: 480, maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 8px 40px rgba(0,0,0,0.18)' }}>
+        <div style={{ fontWeight: 700, fontSize: '1.1rem', marginBottom: 20 }}>
+          {isEdit ? '✏️ แก้ไข Workspace' : '➕ สร้าง Workspace ใหม่'}
+        </div>
+
+        <div style={{ marginBottom: 14 }}>
+          <label style={{ fontSize: '0.82rem', color: '#555', fontWeight: 600 }}>ชื่อ Workspace</label>
+          <input
+            value={name}
+            onChange={e => setName(e.target.value)}
+            placeholder="ชื่อ workspace..."
+            style={{ display: 'block', width: '100%', marginTop: 6, padding: '9px 12px', borderRadius: 10, border: '1.5px solid #e5e5ea', fontSize: '0.95rem', boxSizing: 'border-box' }}
+          />
+        </div>
+
+        <div style={{ marginBottom: 18 }}>
+          <label style={{ fontSize: '0.82rem', color: '#555', fontWeight: 600 }}>คำอธิบาย (ไม่บังคับ)</label>
+          <textarea
+            value={desc}
+            onChange={e => setDesc(e.target.value)}
+            placeholder="อธิบายวัตถุประสงค์ของ workspace..."
+            rows={2}
+            style={{ display: 'block', width: '100%', marginTop: 6, padding: '9px 12px', borderRadius: 10, border: '1.5px solid #e5e5ea', fontSize: '0.9rem', resize: 'vertical', boxSizing: 'border-box' }}
+          />
+        </div>
+
+        <div style={{ marginBottom: 20 }}>
+          <label style={{ fontSize: '0.82rem', color: '#555', fontWeight: 600 }}>เลือก Workers ({selectedIds.length} คน)</label>
+          <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 260, overflowY: 'auto' }}>
+            {library.length === 0 && <div style={{ color: '#aaa', fontSize: '0.82rem' }}>ยังไม่มี worker ในคลัง</div>}
+            {library.map(w => {
+              const sel = selectedIds.includes(w.id)
+              return (
+                <div key={w.id}
+                  onClick={() => toggleWorker(w.id)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 12,
+                    border: `2px solid ${sel ? '#7c3aed' : '#e5e5ea'}`,
+                    background: sel ? '#f5f0ff' : 'white',
+                    cursor: 'pointer', transition: 'all 0.12s',
+                  }}>
+                  <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#f3e8ff', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', flexShrink: 0 }}>
+                    {w.avatar && w.avatar.startsWith('/')
+                      ? <img src={w.avatar} style={{ width: 28, height: 28, objectFit: 'cover' }} alt={w.name} />
+                      : (w.avatar || w.name.charAt(0))}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>{w.name}</div>
+                    <div style={{ fontSize: '0.75rem', color: '#888' }}>{w.role} · {MODEL_SHORT[w.llm_model] || w.llm_model}</div>
+                  </div>
+                  <div style={{ width: 20, height: 20, borderRadius: '50%', border: `2px solid ${sel ? '#7c3aed' : '#ccc'}`, background: sel ? '#7c3aed' : 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    {sel && <span style={{ color: 'white', fontSize: '0.7rem', lineHeight: 1 }}>✓</span>}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+          <button onClick={onClose} style={{ padding: '9px 18px', borderRadius: 10, border: '1.5px solid #e5e5ea', background: 'white', cursor: 'pointer', fontSize: '0.9rem' }}>ยกเลิก</button>
+          <button onClick={save} disabled={saving || !name.trim()}
+            style={{ padding: '9px 20px', borderRadius: 10, border: 'none', background: saving || !name.trim() ? '#c4b5fd' : '#7c3aed', color: 'white', fontWeight: 700, cursor: saving || !name.trim() ? 'default' : 'pointer', fontSize: '0.9rem' }}>
+            {saving ? 'กำลังบันทึก...' : isEdit ? 'บันทึก' : 'สร้าง'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Project Room ────────────────────────────────────────────────────────────
+function ProjectRoom({ project: initialProject, onBack, onRefresh }) {
+  const [project, setProject] = useState(initialProject)
   const [messages, setMessages] = useState([])
   const [task, setTask] = useState('')
   const [connected, setConnected] = useState(false)
   const [running, setRunning] = useState(false)
   const [typingInfo, setTypingInfo] = useState(null)
   const [pendingFile, setPendingFile] = useState(null)
+  const [showEdit, setShowEdit] = useState(false)
   const bottomRef = useRef(null)
   const wsRef = useRef(null)
   const reconnectTimer = useRef(null)
   const fileInputRef = useRef(null)
   const memberNames = (project.members || []).map(m => m.name)
+
+  const reloadProject = async () => {
+    const data = await fetch(`/api/projects/${project.id}`).then(r => r.json())
+    setProject(data)
+    if (onRefresh) onRefresh()
+  }
 
   const connectWs = () => {
     if (wsRef.current) { wsRef.current.onclose = null; wsRef.current.close() }
@@ -170,12 +313,24 @@ function ProjectRoom({ project, onBack }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', flex: 1 }}>
+      {showEdit && (
+        <ProjectFormModal
+          project={project}
+          onClose={() => setShowEdit(false)}
+          onSaved={reloadProject}
+        />
+      )}
+
       {/* header */}
       <div className="workspace-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
           <button onClick={onBack} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.1rem', padding: '2px 6px', color: '#7c3aed' }}>←</button>
           <div style={{ minWidth: 0 }}>
-            <div className="workspace-title">🗂️ {project.name}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span className="workspace-title">🗂️ {project.name}</span>
+              <button onClick={() => setShowEdit(true)} title="แก้ไข"
+                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.9rem', padding: '0 4px', opacity: 0.6, lineHeight: 1 }}>✏️</button>
+            </div>
             <div className="workspace-workers">
               {(project.members || []).map(m => {
                 const color = getWorkerColor(m.name, memberNames)
@@ -265,9 +420,11 @@ function ProjectRoom({ project, onBack }) {
   )
 }
 
+// ─── Main Workspace ───────────────────────────────────────────────────────────
 export default function Workspace() {
   const [projects, setProjects] = useState([])
   const [activeProject, setActiveProject] = useState(null)
+  const [showCreate, setShowCreate] = useState(false)
 
   const loadProjects = async () => {
     const data = await fetch('/api/projects/').then(r => r.json())
@@ -286,21 +443,38 @@ export default function Workspace() {
   }
 
   if (activeProject) {
-    return <ProjectRoom project={activeProject} onBack={() => { setActiveProject(null); loadProjects() }} />
+    return (
+      <ProjectRoom
+        project={activeProject}
+        onBack={() => { setActiveProject(null); loadProjects() }}
+        onRefresh={loadProjects}
+      />
+    )
   }
 
   return (
     <div style={{ padding: 24, flex: 1, overflowY: 'auto' }}>
+      {showCreate && (
+        <ProjectFormModal
+          project={null}
+          onClose={() => setShowCreate(false)}
+          onSaved={loadProjects}
+        />
+      )}
+
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-        <h2 style={{ margin: 0, fontSize: '1.2rem' }}>🗂️ Workspace — Projects</h2>
-        <span style={{ fontSize: '0.8rem', color: '#aaa' }}>สร้าง project ได้จากหน้า Chat</span>
+        <h2 style={{ margin: 0, fontSize: '1.2rem' }}>🗂️ Workspace</h2>
+        <button onClick={() => setShowCreate(true)}
+          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 10, border: 'none', background: '#7c3aed', color: 'white', fontWeight: 700, cursor: 'pointer', fontSize: '0.88rem' }}>
+          ➕ สร้าง Workspace
+        </button>
       </div>
 
       {projects.length === 0 && (
         <div style={{ textAlign: 'center', color: '#aaa', marginTop: 60 }}>
           <div style={{ fontSize: '3rem' }}>🗂️</div>
-          <div>ยังไม่มี project ค่ะ</div>
-          <div style={{ fontSize: '0.82rem', marginTop: 8 }}>สั่งงาน ยูจิน ที่หน้า Chat แล้ว Approve proposal เพื่อสร้าง project</div>
+          <div>ยังไม่มี workspace ค่ะ</div>
+          <div style={{ fontSize: '0.82rem', marginTop: 8 }}>กด "สร้าง Workspace" หรือให้ ยูจิน สร้างจากหน้า Chat</div>
         </div>
       )}
 
@@ -324,7 +498,7 @@ export default function Workspace() {
                 ))}
               </div>
             </div>
-            <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
               <span style={{ fontSize: '0.75rem', color: '#aaa', whiteSpace: 'nowrap' }}>
                 {new Date(p.created_at).toLocaleDateString('th-TH')}
               </span>

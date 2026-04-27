@@ -1,94 +1,601 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import JSZip from 'jszip'
 
-export default function Skills() {
-  const [skills, setSkills] = useState([])
-  const [selected, setSelected] = useState(null) // skill being viewed/edited
-  const [form, setForm] = useState({ name: '', description: '', content: '' })
-  const [mode, setMode] = useState('list') // list | edit | new
+const LIBRARY_URL = 'http://119.59.103.122:8040'
 
-  const load = () => fetch('/api/skills/').then(r => r.json()).then(setSkills)
+const CATEGORIES = [
+  { value: 'general',       label: '🗂 General' },
+  { value: 'coding',        label: '💻 Coding' },
+  { value: 'writing',       label: '✍️ Writing' },
+  { value: 'analysis',      label: '🔍 Analysis' },
+  { value: 'image',         label: '🖼 Image' },
+  { value: 'workflow',      label: '⚙️ Workflow' },
+  { value: 'communication', label: '💬 Communication' },
+  { value: 'research',      label: '🔬 Research' },
+  { value: 'translation',   label: '🌐 Translation' },
+  { value: 'marketing',     label: '📣 Marketing' },
+  { value: 'legal',         label: '⚖️ Legal & Compliance' },
+]
 
-  useEffect(() => { load() }, [])
+function catLabel(val) {
+  return CATEGORIES.find(c => c.value === val)?.label || val
+}
 
-  const openNew = () => {
-    setForm({ name: '', description: '', content: '' })
-    setMode('new')
-    setSelected(null)
+// ─── Tag Input ────────────────────────────────────────────────────────────────
+function TagInput({ tags, onChange }) {
+  const [input, setInput] = useState('')
+  const add = (val) => {
+    const v = val.trim()
+    if (v && !tags.includes(v)) onChange([...tags, v])
+    setInput('')
+  }
+  const remove = (t) => onChange(tags.filter(x => x !== t))
+  return (
+    <div style={{ border: '1.5px solid #e5e5ea', borderRadius: 9, padding: '6px 10px', display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', background: 'white', minHeight: 40, cursor: 'text' }}>
+      {tags.map(t => (
+        <span key={t} style={{ background: '#e0f2fe', color: '#0369a1', fontSize: '0.8rem', padding: '2px 8px', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 4 }}>
+          #{t}
+          <button onClick={() => remove(t)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#0369a1', padding: 0, fontSize: '0.8rem', lineHeight: 1 }}>✕</button>
+        </span>
+      ))}
+      <input value={input} onChange={e => setInput(e.target.value)}
+        onKeyDown={e => {
+          if ((e.key === 'Enter' || e.key === ',') && input.trim()) { e.preventDefault(); add(input) }
+          if (e.key === 'Backspace' && !input && tags.length) remove(tags[tags.length - 1])
+        }}
+        onBlur={() => input.trim() && add(input)}
+        placeholder={tags.length === 0 ? 'พิมพ์แล้วกด Enter เพื่อเพิ่ม' : ''}
+        style={{ border: 'none', outline: 'none', fontSize: '0.85rem', flex: 1, minWidth: 100, background: 'transparent', fontFamily: 'inherit' }} />
+    </div>
+  )
+}
+
+// ─── Skill Form Modal ─────────────────────────────────────────────────────────
+function RefRow({ ref: r, onChange, onRemove }) {
+  return (
+    <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 8, padding: 10 }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <input
+          value={r.path}
+          onChange={e => onChange({ ...r, path: e.target.value })}
+          placeholder="path เช่น references/script.md"
+          style={{ width: '100%', padding: '6px 10px', borderRadius: 7, border: '1.5px solid #e5e7eb', fontSize: '0.78rem', fontFamily: 'monospace', boxSizing: 'border-box' }}
+        />
+        <textarea
+          value={r.content}
+          onChange={e => onChange({ ...r, content: e.target.value })}
+          placeholder="เนื้อหา reference..."
+          rows={6}
+          style={{ width: '100%', padding: '8px 10px', borderRadius: 7, border: '1.5px solid #e5e7eb', fontSize: '0.78rem', fontFamily: 'monospace', resize: 'vertical', boxSizing: 'border-box' }}
+        />
+      </div>
+      <button onClick={onRemove}
+        style={{ padding: '5px 9px', borderRadius: 6, border: '1px solid #fca5a5', background: 'white', color: '#dc2626', cursor: 'pointer', fontSize: '0.8rem', flexShrink: 0, marginTop: 2 }}>✕</button>
+    </div>
+  )
+}
+
+function SkillFormModal({ initial, onClose, onSaved }) {
+  const isEdit = !!initial
+  const [form, setForm] = useState({
+    name: initial?.name || '',
+    description: initial?.description || '',
+    category: initial?.category || 'general',
+    tags: initial?.tags || [],
+    content: initial?.content || '',
+    refs: initial?.refs || [],
+  })
+  const [saving, setSaving] = useState(false)
+  const [skillFileLoaded, setSkillFileLoaded] = useState(false)
+  const skillFileRef = useRef(null)
+  const refFileRef = useRef(null)
+
+  useEffect(() => {
+    if (initial?.id) {
+      // โหลด refs จาก server ถ้าเป็น edit
+      fetch(`/api/skills/${initial.id}`)
+        .then(r => r.json())
+        .then(d => setForm(p => ({ ...p, refs: d.refs || [] })))
+        .catch(() => {})
+    }
+  }, [initial?.id])
+
+  const handleSkillFile = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    try {
+      const zip = await JSZip.loadAsync(file)
+      let skillContent = ''
+      const loadedRefs = []
+      for (const [relativePath, zipEntry] of Object.entries(zip.files)) {
+        if (zipEntry.dir) continue
+        const parts = relativePath.split('/')
+        const filename = parts[parts.length - 1]
+        if (filename === 'SKILL.md') {
+          skillContent = await zipEntry.async('string')
+        } else if (relativePath.includes('references/') && filename.endsWith('.md')) {
+          const refContent = await zipEntry.async('string')
+          const refPath = parts.slice(parts.findIndex(p => p === 'references')).join('/')
+          loadedRefs.push({ path: refPath, content: refContent })
+        }
+      }
+      if (skillContent) setForm(p => ({ ...p, content: skillContent }))
+      if (loadedRefs.length > 0) setForm(p => ({ ...p, refs: loadedRefs }))
+      setSkillFileLoaded(true)
+    } catch {
+      alert('ไม่สามารถอ่านไฟล์ .skill ได้ค่ะ')
+    }
   }
 
-  const openEdit = async (s) => {
-    const full = await fetch(`/api/skills/${s.id}`).then(r => r.json())
-    setForm({ name: full.name, description: full.description || '', content: full.content })
-    setSelected(full)
-    setMode('edit')
+  const uploadRef = (e) => {
+    const files = Array.from(e.target.files || [])
+    files.forEach(file => {
+      const reader = new FileReader()
+      reader.onload = ev => {
+        setForm(p => ({ ...p, refs: [...p.refs, { path: `references/${file.name}`, content: ev.target.result }] }))
+      }
+      reader.readAsText(file)
+    })
+    e.target.value = ''
   }
 
   const save = async () => {
     if (!form.name.trim() || !form.content.trim()) return
-    if (mode === 'new') {
-      await fetch('/api/skills/', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) })
+    setSaving(true)
+    const body = { name: form.name, description: form.description, category: form.category, tags: form.tags, content: form.content, refs: form.refs }
+    if (isEdit) {
+      await fetch(`/api/skills/${initial.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
     } else {
-      await fetch(`/api/skills/${selected.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) })
+      await fetch('/api/skills/', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
     }
-    await load()
-    setMode('list')
+    setSaving(false)
+    onSaved()
+    onClose()
+  }
+
+  const canSave = form.name.trim() && form.content.trim() && !saving
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ background: 'white', borderRadius: 20, width: 780, maxWidth: '95vw', maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 12px 48px rgba(0,0,0,0.2)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 24px 16px', borderBottom: '1px solid #f0eeff', flexShrink: 0 }}>
+          <h2 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>
+            {isEdit ? `✏️ แก้ไข: ${initial.name}` : '✨ Skill ใหม่'}
+          </h2>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.2rem', color: '#bbb', lineHeight: 1 }}>✕</button>
+        </div>
+
+        <div style={{ overflowY: 'auto', flex: 1, padding: '18px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {/* Upload .skill banner */}
+          <div style={{
+            background: skillFileLoaded ? '#f0fdf4' : '#eff6ff',
+            border: `1px solid ${skillFileLoaded ? '#86efac' : '#bfdbfe'}`,
+            borderRadius: 10, padding: '11px 16px',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+          }}>
+            <div>
+              <div style={{ fontSize: '0.83rem', fontWeight: 600, color: skillFileLoaded ? '#16a34a' : '#1d4ed8' }}>
+                {skillFileLoaded ? '✅ โหลด .skill ไฟล์แล้ว — content + references พร้อมแล้วค่า' : '📦 มีไฟล์ .skill มั้ยคะ?'}
+              </div>
+              {!skillFileLoaded && <div style={{ fontSize: '0.75rem', color: '#6b7280', marginTop: 2 }}>upload แล้ว content + references จะถูก fill ให้อัตโนมัติเลยค่า</div>}
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+              <button onClick={() => skillFileRef.current?.click()}
+                style={{ padding: '6px 14px', borderRadius: 8, border: '1.5px solid #bfdbfe', background: 'white', color: '#1d4ed8', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600 }}>
+                {skillFileLoaded ? '🔄 เปลี่ยนไฟล์' : '📂 Upload .skill'}
+              </button>
+              {skillFileLoaded && (
+                <button onClick={() => { setForm(p => ({ ...p, content: '', refs: [] })); setSkillFileLoaded(false) }}
+                  style={{ padding: '6px 12px', borderRadius: 8, border: '1.5px solid #e5e7eb', background: 'white', color: '#6b7280', cursor: 'pointer', fontSize: '0.8rem' }}>ล้าง</button>
+              )}
+            </div>
+          </div>
+          <input ref={skillFileRef} type="file" accept=".skill,.zip" style={{ display: 'none' }} onChange={handleSkillFile} />
+
+          {/* Name */}
+          <div>
+            <label style={{ fontSize: '0.82rem', fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>ชื่อ Skill <span style={{ color: '#f87171' }}>*</span></label>
+            <input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
+              placeholder="เช่น SEO Copywriting Standard"
+              style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: '0.88rem', boxSizing: 'border-box' }} />
+          </div>
+
+          {/* Description */}
+          <div>
+            <label style={{ fontSize: '0.82rem', fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>คำอธิบาย</label>
+            <input value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))}
+              placeholder="สั้นๆ ว่า skill นี้ทำอะไร"
+              style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: '0.88rem', boxSizing: 'border-box' }} />
+          </div>
+
+          {/* Category + Tags */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.8fr', gap: 12 }}>
+            <div>
+              <label style={{ fontSize: '0.82rem', fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Category</label>
+              <select value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value }))}
+                style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: '0.85rem', fontFamily: 'inherit', background: 'white', cursor: 'pointer' }}>
+                {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={{ fontSize: '0.82rem', fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Tags <span style={{ color: '#aaa', fontWeight: 400, fontSize: '0.72rem' }}>(Enter หรือ , เพื่อเพิ่ม)</span></label>
+              <TagInput tags={form.tags} onChange={tags => setForm(p => ({ ...p, tags }))} />
+            </div>
+          </div>
+
+          {/* Content */}
+          <div>
+            <label style={{ fontSize: '0.82rem', fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>
+              เนื้อหา (Markdown) <span style={{ color: '#f87171' }}>*</span>
+              {skillFileLoaded && <span style={{ fontSize: '0.7rem', color: '#16a34a', fontWeight: 400, marginLeft: 8 }}>✅ โหลดจาก SKILL.md</span>}
+            </label>
+            <textarea value={form.content} onChange={e => setForm(p => ({ ...p, content: e.target.value }))}
+              placeholder={'# มาตรฐาน\n- ข้อ 1\n- ข้อ 2\n\n## วิธีทำงาน\n...'}
+              rows={12}
+              style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: '0.84rem', fontFamily: 'monospace', resize: 'vertical', boxSizing: 'border-box', lineHeight: 1.65 }} />
+          </div>
+
+          {/* Reference Files */}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <label style={{ fontSize: '0.82rem', fontWeight: 600, color: '#374151' }}>
+                Reference Files
+                <span style={{ fontSize: '0.72rem', color: '#9ca3af', fontWeight: 400, marginLeft: 8 }}>({form.refs.length} ไฟล์)</span>
+                {skillFileLoaded && form.refs.length > 0 && <span style={{ fontSize: '0.7rem', color: '#16a34a', fontWeight: 400, marginLeft: 8 }}>✅ โหลดจาก .skill</span>}
+              </label>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button onClick={() => refFileRef.current?.click()}
+                  style={{ padding: '5px 12px', borderRadius: 7, border: '1.5px solid #e5e7eb', background: 'white', color: '#374151', cursor: 'pointer', fontSize: '0.78rem' }}>📎 Upload .md</button>
+                <button onClick={() => setForm(p => ({ ...p, refs: [...p.refs, { path: 'references/', content: '' }] }))}
+                  style={{ padding: '5px 12px', borderRadius: 7, border: '1.5px solid #e5e7eb', background: 'white', color: '#374151', cursor: 'pointer', fontSize: '0.78rem' }}>+ เพิ่ม ref</button>
+              </div>
+            </div>
+            <input ref={refFileRef} type="file" multiple accept=".md,.txt" style={{ display: 'none' }} onChange={uploadRef} />
+            {form.refs.length === 0 ? (
+              <div style={{ fontSize: '0.8rem', color: '#9ca3af', padding: '10px 0' }}>ยังไม่มี reference — กด "+ เพิ่ม ref" หรือ "📎 Upload .md" ค่า</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {form.refs.map((r, i) => (
+                  <RefRow key={i} ref={r}
+                    onChange={updated => setForm(p => ({ ...p, refs: p.refs.map((x, j) => j === i ? updated : x) }))}
+                    onRemove={() => setForm(p => ({ ...p, refs: p.refs.filter((_, j) => j !== i) }))}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', padding: '14px 24px 20px', borderTop: '1px solid #f0eeff', flexShrink: 0 }}>
+          <button onClick={onClose} style={{ padding: '9px 18px', borderRadius: 10, border: '1.5px solid #e5e5ea', background: 'white', cursor: 'pointer', fontSize: '0.88rem' }}>ยกเลิก</button>
+          <button onClick={save} disabled={!canSave}
+            style={{ padding: '9px 22px', borderRadius: 10, border: 'none', background: canSave ? '#7c3aed' : '#c4b5fd', color: 'white', fontWeight: 700, cursor: canSave ? 'pointer' : 'default', fontSize: '0.88rem' }}>
+            {saving ? 'กำลังบันทึก...' : '💾 บันทึก'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Skill Detail Modal ───────────────────────────────────────────────────────
+function SkillDetail({ skill, source, onClose, onEdit, onDelete }) {
+  const isLibrary = source === 'library'
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ background: 'white', borderRadius: 18, width: 640, maxWidth: '95vw', maxHeight: '88vh', display: 'flex', flexDirection: 'column', boxShadow: '0 8px 40px rgba(0,0,0,0.18)' }}>
+        <div style={{ padding: '20px 24px 14px', borderBottom: '1px solid #f3f4f6', flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginBottom: 6 }}>
+                <span style={{ fontSize: '1.05rem', fontWeight: 700 }}>{skill.name}</span>
+                <span style={{ fontSize: '0.7rem', padding: '2px 9px', borderRadius: 8, fontWeight: 700,
+                  background: isLibrary ? '#eff6ff' : '#f5f0ff',
+                  color: isLibrary ? '#1d4ed8' : '#7c3aed',
+                  border: `1px solid ${isLibrary ? '#bfdbfe' : '#e9d5ff'}` }}>
+                  {isLibrary ? '📦 Skills Library' : '⚡ Yujin'}
+                </span>
+                {skill.category && (
+                  <span style={{ fontSize: '0.7rem', background: '#f3f4f6', color: '#6b7280', padding: '2px 9px', borderRadius: 8 }}>{catLabel(skill.category)}</span>
+                )}
+              </div>
+              {skill.description && <div style={{ fontSize: '0.84rem', color: '#666', marginBottom: 6 }}>{skill.description}</div>}
+              {skill.tags?.length > 0 && (
+                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                  {skill.tags.map(t => <span key={t} style={{ fontSize: '0.68rem', background: '#e0f2fe', color: '#0369a1', padding: '1px 7px', borderRadius: 6 }}>#{t}</span>)}
+                </div>
+              )}
+            </div>
+            <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.2rem', color: '#bbb', flexShrink: 0 }}>✕</button>
+          </div>
+        </div>
+
+        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {/* SKILL.md content */}
+          <div>
+            <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#7c3aed', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>📄 SKILL.md</div>
+            <div style={{ background: '#f8f7ff', borderRadius: 12, padding: '14px 16px', border: '1px solid #ede9fe' }}>
+              <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: '0.82rem', color: '#374151', fontFamily: 'inherit', lineHeight: 1.75 }}>
+                {skill.content || '(ไม่มีเนื้อหา)'}
+              </pre>
+            </div>
+          </div>
+          {/* Reference files */}
+          {skill.refs?.length > 0 && (
+            <div>
+              <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#0369a1', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>📎 Reference Files ({skill.refs.length})</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {skill.refs.map((ref, i) => (
+                  <details key={i} style={{ background: '#f0f9ff', borderRadius: 10, border: '1px solid #bae6fd', overflow: 'hidden' }}>
+                    <summary style={{ padding: '9px 14px', cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem', color: '#0369a1', listStyle: 'none', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontSize: '0.65rem', background: '#0369a1', color: 'white', padding: '1px 6px', borderRadius: 4, fontFamily: 'monospace' }}>{ref.path}</span>
+                    </summary>
+                    <div style={{ padding: '10px 14px', borderTop: '1px solid #bae6fd' }}>
+                      <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: '0.79rem', color: '#374151', fontFamily: 'inherit', lineHeight: 1.7 }}>
+                        {ref.content}
+                      </pre>
+                    </div>
+                  </details>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between', alignItems: 'center', padding: '12px 24px 18px', borderTop: '1px solid #f3f4f6', flexShrink: 0 }}>
+          <div>
+            {!isLibrary && (
+              <a href={`/api/skills/${skill.id}/export`} download
+                style={{ padding: '7px 14px', borderRadius: 9, border: '1.5px solid #bfdbfe', background: '#eff6ff', color: '#1d4ed8', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600, textDecoration: 'none', display: 'inline-block' }}>
+                ⬇️ Download .skill
+              </a>
+            )}
+          </div>
+          {!isLibrary && (
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={() => { onDelete(skill.id); onClose() }}
+                style={{ padding: '8px 16px', borderRadius: 9, border: '1.5px solid #fca5a5', background: 'white', color: '#dc2626', cursor: 'pointer', fontSize: '0.85rem' }}>
+                🗑️ ลบ
+              </button>
+              <button onClick={() => { onClose(); onEdit(skill) }}
+                style={{ padding: '8px 18px', borderRadius: 9, border: 'none', background: '#7c3aed', color: 'white', cursor: 'pointer', fontWeight: 700, fontSize: '0.85rem' }}>
+                ✏️ แก้ไข
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Skill Card ───────────────────────────────────────────────────────────────
+function SkillCard({ skill, source, onClick }) {
+  const isLibrary = source === 'library'
+  const cat = skill.category || 'general'
+  return (
+    <div onClick={onClick}
+      style={{ background: 'white', border: `1.5px solid ${isLibrary ? '#bfdbfe' : '#e9d5ff'}`, borderRadius: 14, padding: '14px 16px', cursor: 'pointer', transition: 'box-shadow 0.15s', display: 'flex', flexDirection: 'column', gap: 6 }}
+      onMouseEnter={e => e.currentTarget.style.boxShadow = `0 2px 14px ${isLibrary ? 'rgba(59,130,246,0.13)' : 'rgba(124,58,237,0.13)'}`}
+      onMouseLeave={e => e.currentTarget.style.boxShadow = 'none'}>
+      <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>{skill.name}</div>
+      <div>
+        <span style={{ fontSize: '0.63rem', background: '#f3f4f6', color: '#6b7280', padding: '2px 8px', borderRadius: 6, fontWeight: 500 }}>{catLabel(cat)}</span>
+      </div>
+      {skill.description && <div style={{ fontSize: '0.76rem', color: '#888', lineHeight: 1.5 }}>{skill.description}</div>}
+      {skill.tags?.length > 0 && (
+        <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+          {skill.tags.slice(0, 5).map(t => <span key={t} style={{ fontSize: '0.63rem', background: '#e0f2fe', color: '#0369a1', padding: '1px 6px', borderRadius: 5 }}>#{t}</span>)}
+          {skill.tags.length > 5 && <span style={{ fontSize: '0.63rem', color: '#aaa' }}>+{skill.tags.length - 5}</span>}
+        </div>
+      )}
+      <div style={{ fontSize: '0.68rem', color: '#ccc' }}>
+        {new Date(skill.created_at).toLocaleDateString('th-TH')}
+      </div>
+    </div>
+  )
+}
+
+// ─── Section Divider ──────────────────────────────────────────────────────────
+function SectionDivider({ isLibrary, count }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '4px 0 14px' }}>
+      <div style={{ height: 1, flex: 1, background: isLibrary ? '#dbeafe' : '#f0eeff' }} />
+      <span style={{ fontSize: '0.76rem', fontWeight: 700, padding: '3px 14px', borderRadius: 20,
+        color: isLibrary ? '#1d4ed8' : '#7c3aed',
+        background: isLibrary ? '#eff6ff' : '#f5f0ff',
+        border: `1px solid ${isLibrary ? '#bfdbfe' : '#e9d5ff'}` }}>
+        {isLibrary ? '📦 Skills Library' : '⚡ สร้างจาก Yujin'} · {count} skill
+      </span>
+      <div style={{ height: 1, flex: 1, background: isLibrary ? '#dbeafe' : '#f0eeff' }} />
+    </div>
+  )
+}
+
+// ─── Main ─────────────────────────────────────────────────────────────────────
+export default function Skills() {
+  const [yujinSkills, setYujinSkills] = useState([])
+  const [librarySkills, setLibrarySkills] = useState([])
+  const [loadingLib, setLoadingLib] = useState(true)
+  const [libError, setLibError] = useState(false)
+  const [viewing, setViewing] = useState(null)
+  const [formModal, setFormModal] = useState(null)   // null | { initial }
+  const [tab, setTab] = useState('all')
+  const [search, setSearch] = useState('')
+  const [catFilter, setCatFilter] = useState('all')  // 'all' | category value
+
+  const loadYujin = () => fetch('/api/skills/').then(r => r.json()).then(setYujinSkills)
+
+  const loadLibrary = async () => {
+    setLoadingLib(true)
+    try {
+      const data = await fetch(`${LIBRARY_URL}/api/skills/`).then(r => r.json())
+      setLibrarySkills(data)
+      setLibError(false)
+    } catch {
+      setLibError(true)
+    } finally {
+      setLoadingLib(false)
+    }
+  }
+
+  useEffect(() => { loadYujin(); loadLibrary() }, [])
+
+  const openEdit = async (skill) => {
+    const full = await fetch(`/api/skills/${skill.id}`).then(r => r.json())
+    setFormModal({ initial: full })
   }
 
   const del = async (id) => {
     if (!confirm('ลบ skill นี้?')) return
     await fetch(`/api/skills/${id}`, { method: 'DELETE' })
-    await load()
-    if (mode === 'edit' && selected?.id === id) setMode('list')
+    await loadYujin()
   }
 
-  if (mode === 'new' || mode === 'edit') return (
-    <div className="skills-editor">
-      <div className="skills-editor-header">
-        <button onClick={() => setMode('list')} style={{background:'none',border:'none',cursor:'pointer',fontSize:'1.2rem'}}>←</button>
-        <h2>{mode === 'new' ? '✨ Skill ใหม่' : `✏️ แก้ไข: ${selected?.name}`}</h2>
-      </div>
-      <label className="skill-label">ชื่อ Skill</label>
-      <input className="skill-input" value={form.name} onChange={e => setForm(p => ({...p, name: e.target.value}))} placeholder="เช่น SEO Copywriting Standard" />
-      <label className="skill-label">คำอธิบาย</label>
-      <input className="skill-input" value={form.description} onChange={e => setForm(p => ({...p, description: e.target.value}))} placeholder="สั้นๆ ว่า skill นี้ทำอะไร" />
-      <label className="skill-label">เนื้อหา (Markdown)</label>
-      <textarea
-        className="skill-textarea"
-        value={form.content}
-        onChange={e => setForm(p => ({...p, content: e.target.value}))}
-        placeholder={'# มาตรฐาน\n- ข้อ 1\n- ข้อ 2\n\n## วิธีทำงาน\n...'}
-        rows={18}
-      />
-      <div style={{display:'flex', gap:8, marginTop:12}}>
-        <button className="skill-save-btn" onClick={save}>💾 บันทึก</button>
-        <button className="skill-cancel-btn" onClick={() => setMode('list')}>ยกเลิก</button>
-      </div>
-    </div>
-  )
+  const openView = async (skill, source) => {
+    if (source === 'library') {
+      try {
+        const full = await fetch(`${LIBRARY_URL}/api/skills/${skill.id}`).then(r => r.json())
+        setViewing({ skill: full, source })
+      } catch { setViewing({ skill, source }) }
+    } else {
+      const full = await fetch(`/api/skills/${skill.id}`).then(r => r.json())
+      setViewing({ skill: full, source })
+    }
+  }
+
+  const matchSearch = (s) => {
+    const q = search.trim().toLowerCase()
+    const matchQ = !q || s.name.toLowerCase().includes(q) || (s.description || '').toLowerCase().includes(q) || (s.tags || []).some(t => t.toLowerCase().includes(q))
+    const matchCat = catFilter === 'all' || (s.category || 'general') === catFilter
+    return matchQ && matchCat
+  }
+
+  const filteredYujin = yujinSkills.filter(matchSearch)
+  const filteredLibrary = librarySkills.filter(matchSearch)
+
+  // หา categories ที่มีอยู่จริง (union ทั้งสองแหล่ง)
+  const allSkills = [...yujinSkills, ...librarySkills]
+  const usedCats = ['all', ...CATEGORIES.map(c => c.value).filter(v => allSkills.some(s => (s.category || 'general') === v))]
 
   return (
-    <div className="skills-page">
-      <div className="skills-header">
-        <h2>📚 Skills Library</h2>
-        <button className="skill-new-btn" onClick={openNew}>+ Skill ใหม่</button>
-      </div>
-      {skills.length === 0 && (
-        <div style={{textAlign:'center', color:'#aaa', marginTop:60}}>
-          <div style={{fontSize:'3rem'}}>📄</div>
-          <div>ยังไม่มี Skill ค่ะ สร้างเลยนะคะ</div>
-        </div>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', overflow: 'hidden' }}>
+
+      {formModal !== null && (
+        <SkillFormModal initial={formModal.initial} onClose={() => setFormModal(null)} onSaved={loadYujin} />
       )}
-      <div className="skills-list">
-        {skills.map(s => (
-          <div key={s.id} className="skill-card">
-            <div className="skill-card-body" onClick={() => openEdit(s)}>
-              <div className="skill-card-name">📄 {s.name}</div>
-              {s.description && <div className="skill-card-desc">{s.description}</div>}
-              <div className="skill-card-date">{new Date(s.created_at).toLocaleDateString('th-TH')}</div>
-            </div>
-            <button className="skill-del-btn" onClick={() => del(s.id)}>🗑️</button>
+      {viewing && (
+        <SkillDetail skill={viewing.skill} source={viewing.source} onClose={() => setViewing(null)}
+          onEdit={s => { setViewing(null); openEdit(s) }}
+          onDelete={id => { del(id); setViewing(null) }} />
+      )}
+
+      {/* Top bar */}
+      <div style={{ padding: '18px 28px 0', flexShrink: 0, borderBottom: '2px solid #f0eeff' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+          <h2 style={{ margin: 0, fontSize: '1.15rem' }}>📚 Skills</h2>
+          <button onClick={() => setFormModal({ initial: null })}
+            style={{ padding: '8px 18px', borderRadius: 10, border: 'none', background: '#7c3aed', color: 'white', fontWeight: 700, cursor: 'pointer', fontSize: '0.86rem' }}>
+            + Skill ใหม่
+          </button>
+        </div>
+
+        {/* Search + Category filter */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+          <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
+            <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#bbb', fontSize: '0.9rem', pointerEvents: 'none' }}>🔍</span>
+            <input value={search} onChange={e => setSearch(e.target.value)}
+              placeholder="ค้นหาจากชื่อ, คำอธิบาย, หรือ tag..."
+              style={{ width: '100%', padding: '9px 14px 9px 34px', borderRadius: 10, border: '1.5px solid #e5e5ea', fontSize: '0.88rem', boxSizing: 'border-box', outline: 'none', fontFamily: 'inherit' }} />
           </div>
-        ))}
+          {search && (
+            <button onClick={() => setSearch('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', fontSize: '1rem', flexShrink: 0 }}>✕</button>
+          )}
+          {/* Category pills */}
+          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+            {usedCats.map(v => {
+              const label = v === 'all' ? 'ทุก Category' : catLabel(v)
+              const active = catFilter === v
+              return (
+                <button key={v} onClick={() => setCatFilter(v)}
+                  style={{ padding: '5px 12px', borderRadius: 20, border: `1.5px solid ${active ? '#7c3aed' : '#e5e5ea'}`,
+                    background: active ? '#7c3aed' : 'white',
+                    color: active ? 'white' : '#666',
+                    fontSize: '0.78rem', fontWeight: active ? 700 : 400,
+                    cursor: 'pointer', transition: 'all 0.12s', whiteSpace: 'nowrap' }}>
+                  {label}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* Source tabs */}
+        <div style={{ display: 'flex', gap: 2 }}>
+          {[
+            { key: 'all', label: 'ทั้งหมด', count: filteredYujin.length + filteredLibrary.length },
+            { key: 'yujin', label: '⚡ Yujin', count: filteredYujin.length },
+            { key: 'library', label: '📦 Skills Library', count: filteredLibrary.length },
+          ].map(t => (
+            <button key={t.key} onClick={() => setTab(t.key)}
+              style={{ padding: '8px 16px', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.83rem',
+                fontWeight: tab === t.key ? 700 : 400,
+                color: tab === t.key ? '#7c3aed' : '#888',
+                borderBottom: tab === t.key ? '2.5px solid #7c3aed' : '2.5px solid transparent',
+                marginBottom: -2 }}>
+              {t.label} <span style={{ fontSize: '0.75rem', opacity: 0.7 }}>({t.count})</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Content */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '20px 28px 28px' }}>
+
+        {(tab === 'all' || tab === 'yujin') && (
+          <div style={{ marginBottom: tab === 'all' ? 32 : 0 }}>
+            {tab === 'all' && <SectionDivider isLibrary={false} count={filteredYujin.length} />}
+            {filteredYujin.length === 0 ? (
+              <div style={{ textAlign: 'center', color: '#bbb', padding: '20px 0', fontSize: '0.84rem' }}>
+                {tab === 'yujin' ? 'ยังไม่มี skill ค่ะ กด "+ Skill ใหม่" เพื่อสร้าง' : 'ไม่มีผล'}
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: 10 }}>
+                {filteredYujin.map(s => <SkillCard key={s.id} skill={s} source="yujin" onClick={() => openView(s, 'yujin')} />)}
+              </div>
+            )}
+          </div>
+        )}
+
+        {(tab === 'all' || tab === 'library') && (
+          <div>
+            {tab === 'all' && <SectionDivider isLibrary={true} count={filteredLibrary.length} />}
+            {loadingLib ? (
+              <div style={{ textAlign: 'center', color: '#aaa', padding: '20px 0', fontSize: '0.84rem' }}>กำลังโหลด Skills Library...</div>
+            ) : libError ? (
+              <div style={{ textAlign: 'center', padding: '20px 0' }}>
+                <div style={{ color: '#f87171', fontSize: '0.84rem', marginBottom: 6 }}>เชื่อมต่อ Skills Library ไม่ได้ค่ะ (port 8040)</div>
+                <button onClick={loadLibrary} style={{ fontSize: '0.8rem', color: '#7c3aed', background: 'none', border: '1px solid #e9d5ff', borderRadius: 8, padding: '4px 12px', cursor: 'pointer' }}>🔄 ลองใหม่</button>
+              </div>
+            ) : filteredLibrary.length === 0 ? (
+              <div style={{ textAlign: 'center', color: '#bbb', padding: '20px 0', fontSize: '0.84rem' }}>
+                {tab === 'library' ? 'ไม่มี skill ใน Skills Library ค่ะ' : 'ไม่มีผล'}
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: 10 }}>
+                {filteredLibrary.map(s => <SkillCard key={s.id} skill={s} source="library" onClick={() => openView(s, 'library')} />)}
+              </div>
+            )}
+          </div>
+        )}
+
+        {!loadingLib && filteredYujin.length + filteredLibrary.length === 0 && (search || catFilter !== 'all') && (
+          <div style={{ textAlign: 'center', color: '#aaa', marginTop: 40 }}>
+            <div style={{ fontSize: '2rem' }}>🔍</div>
+            <div style={{ marginTop: 8, fontSize: '0.85rem' }}>ไม่พบ skill ที่ตรงกับเงื่อนไขค่ะ</div>
+          </div>
+        )}
       </div>
     </div>
   )

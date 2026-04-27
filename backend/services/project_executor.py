@@ -89,8 +89,7 @@ async def run_worker_with_tools(member: ProjectMember, worker_task: str, big_tas
             is_image = getattr(member, "llm_model", "") in IMAGE_MODEL_IDS
             if is_image and len(result) > 1200:
                 # ตัดจากท้ายเพื่อได้เนื้อหาจริง ไม่ใช่ intro
-                snippet = "...(ข้ามส่วนนำ)...
-" + result[-1200:]
+                snippet = '...' + result[-1200:]
             else:
                 snippet = result
             context_block += f"### {name}:\n{snippet}\n\n"
@@ -122,16 +121,44 @@ async def run_worker_with_tools(member: ProjectMember, worker_task: str, big_tas
     skill_block = ""
     if member.skills and db:
         from sqlalchemy import text as sa_text
+        import httpx as _httpx
+        skill_parts = []
         try:
+            # --- Yujin skills (local DB) ---
             result = await db.execute(
                 sa_text("SELECT name, content FROM yujin_skills WHERE id = ANY(:ids)"),
                 {"ids": member.skills}
             )
-            rows = result.fetchall()
-            if rows:
-                skill_block = "\n\n## Skills\n" + "\n\n".join(f"### {r.name}\n{r.content}" for r in rows)
+            for r in result.fetchall():
+                skill_parts.append(f"### {r.name}\n{r.content}")
+
+            # --- Skills Library (port 8040) ---
+            lib_result = await db.execute(
+                sa_text("SELECT id FROM yujin_skills WHERE id = ANY(:ids)"),
+                {"ids": member.skills}
+            )
+            yujin_ids = {str(r.id) for r in lib_result.fetchall()}
+            lib_ids = [sid for sid in member.skills if sid not in yujin_ids]
+
+            for sid in lib_ids:
+                try:
+                    async with _httpx.AsyncClient(timeout=8) as client:
+                        resp = await client.get(f"http://localhost:8040/api/skills/{sid}")
+                    if resp.status_code == 200:
+                        sk = resp.json()
+                        parts = [f"### {sk['name']}\n{sk.get('content', '')}"]
+                        refs = sk.get("refs") or []
+                        if refs:
+                            parts.append("#### Reference Files")
+                            for ref in refs:
+                                parts.append(f"**{ref['path']}**\n{ref['content']}")
+                        skill_parts.append("\n\n".join(parts))
+                except Exception:
+                    pass
         except Exception:
             pass
+        if skill_parts:
+            skill_block = "\n\n## Skills\n" + "\n\n".join(skill_parts)
 
     system_prompt = (
         f"คุณชื่อ {member.name} เป็นผู้หญิง ทำหน้าที่ {member.role}\n"
