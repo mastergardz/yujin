@@ -390,29 +390,48 @@ function SkillCard({ skill, source, onClick }) {
   const isLibrary = source === 'library'
   const cat = skill.category || 'general'
   return (
-    <div onClick={onClick}
-      style={{ background: 'white', border: `1.5px solid ${isLibrary ? '#bfdbfe' : '#e9d5ff'}`, borderRadius: 14, padding: '14px 16px', cursor: 'pointer', transition: 'box-shadow 0.15s', display: 'flex', flexDirection: 'column', gap: 6 }}
-      onMouseEnter={e => e.currentTarget.style.boxShadow = `0 2px 14px ${isLibrary ? 'rgba(59,130,246,0.13)' : 'rgba(124,58,237,0.13)'}`}
-      onMouseLeave={e => e.currentTarget.style.boxShadow = 'none'}>
-      <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>{skill.name}</div>
-      <div>
-        <span style={{ fontSize: '0.63rem', background: '#f3f4f6', color: '#6b7280', padding: '2px 8px', borderRadius: 6, fontWeight: 500 }}>{catLabel(cat)}</span>
+    <div onClick={onClick} style={{
+      background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10,
+      padding: 16, cursor: 'pointer', transition: 'all 0.15s',
+      boxShadow: '0 1px 3px rgba(0,0,0,0.04)', display: 'flex', flexDirection: 'column',
+    }}
+      onMouseEnter={e => { e.currentTarget.style.borderColor = '#93c5fd'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(37,99,235,0.08)' }}
+      onMouseLeave={e => { e.currentTarget.style.borderColor = '#e5e7eb'; e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.04)' }}>
+      {/* Row 1: category + version */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+        <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 999, background: '#f5f3ff', color: '#7c3aed', border: '1px solid #ede9fe', display: 'inline-block' }}>
+          {catLabel(cat)}
+        </span>
+        {skill.version && (
+          <span style={{ fontSize: 11, color: '#6b7280', background: '#f3f4f6', border: '1px solid #e5e7eb', borderRadius: 4, padding: '1px 6px', fontFamily: 'monospace' }}>
+            {skill.version}
+          </span>
+        )}
       </div>
-      {skill.description && <div style={{ fontSize: '0.76rem', color: '#888', lineHeight: 1.5 }}>{skill.description}</div>}
+      {/* Row 2: name */}
+      <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6, color: '#1a1a2e' }}>{skill.name}</div>
+      {/* Row 3: description */}
+      {skill.description && (
+        <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 10, lineHeight: 1.5 }}>{skill.description}</div>
+      )}
+      {/* Row 4: tags */}
       {skill.tags?.length > 0 && (
-        <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
-          {skill.tags.slice(0, 5).map(t => <span key={t} style={{ fontSize: '0.63rem', background: '#e0f2fe', color: '#0369a1', padding: '1px 6px', borderRadius: 5 }}>#{t}</span>)}
-          {skill.tags.length > 5 && <span style={{ fontSize: '0.63rem', color: '#aaa' }}>+{skill.tags.length - 5}</span>}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+          {skill.tags.slice(0, 5).map(t => (
+            <span key={t} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 999, background: '#eff6ff', color: '#2563eb', border: '1px solid #dbeafe' }}>
+              {t}
+            </span>
+          ))}
+          {skill.tags.length > 5 && <span style={{ fontSize: 11, color: '#aaa' }}>+{skill.tags.length - 5}</span>}
         </div>
       )}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 2 }}>
-        <span style={{ fontSize: '0.68rem', color: '#ccc' }}>{new Date(skill.created_at).toLocaleDateString('th-TH')}</span>
-        {skill.version && <span style={{ fontSize: '0.68rem', color: '#6b7280', background: '#f3f4f6', border: '1px solid #e5e7eb', borderRadius: 4, padding: '1px 6px', fontFamily: 'monospace' }}>{skill.version}</span>}
+      {/* Row 5: date */}
+      <div style={{ fontSize: 11, color: '#6b7280', marginTop: 'auto' }}>
+        {new Date(skill.created_at).toLocaleDateString('th-TH')}
       </div>
     </div>
   )
 }
-
 // ─── Section Divider ──────────────────────────────────────────────────────────
 function SectionDivider({ isLibrary, count }) {
   return (
