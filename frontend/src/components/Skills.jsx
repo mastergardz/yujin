@@ -810,10 +810,10 @@ export default function Skills() {
       <div style={{ padding: '18px 28px 0', flexShrink: 0, borderBottom: '2px solid #f0eeff' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
           <h2 style={{ margin: 0, fontSize: '1.15rem' }}>📚 Skills</h2>
-          <label style={{ padding: '8px 18px', borderRadius: 10, border: 'none', background: '#7c3aed', color: 'white', fontWeight: 700, cursor: 'pointer', fontSize: '0.86rem', display: 'inline-block' }}>
-            ⬆️ Import .skill
-            <input type="file" accept=".skill,.zip" style={{ display: 'none' }} onChange={handleImportSkill} />
-          </label>
+          <button onClick={() => setFormModal({ initial: null })}
+            style={{ padding: '8px 18px', borderRadius: 10, border: 'none', background: '#7c3aed', color: 'white', fontWeight: 700, cursor: 'pointer', fontSize: '0.86rem' }}>
+            + Skill ใหม่
+          </button>
         </div>
 
         {/* Search + Category filter — hide on creator tab */}
