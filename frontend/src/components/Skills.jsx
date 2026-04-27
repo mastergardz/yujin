@@ -85,6 +85,7 @@ function SkillFormModal({ initial, onClose, onSaved }) {
     tags: initial?.tags || [],
     content: initial?.content || '',
     refs: initial?.refs || [],
+    version: initial?.version || 'v1.0',
   })
   const [saving, setSaving] = useState(false)
   const [skillFileLoaded, setSkillFileLoaded] = useState(false)
@@ -144,7 +145,7 @@ function SkillFormModal({ initial, onClose, onSaved }) {
   const save = async () => {
     if (!form.name.trim() || !form.content.trim()) return
     setSaving(true)
-    const body = { name: form.name, description: form.description, category: form.category, tags: form.tags, content: form.content, refs: form.refs }
+    const body = { name: form.name, description: form.description, category: form.category, tags: form.tags, content: form.content, refs: form.refs, version: form.version }
     if (isEdit) {
       await fetch(`/api/skills/${initial.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
     } else {
@@ -210,8 +211,8 @@ function SkillFormModal({ initial, onClose, onSaved }) {
               style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: '0.88rem', boxSizing: 'border-box' }} />
           </div>
 
-          {/* Category + Tags */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.8fr', gap: 12 }}>
+          {/* Category + Tags + Version */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.8fr 90px', gap: 12 }}>
             <div>
               <label style={{ fontSize: '0.82rem', fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Category</label>
               <select value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value }))}
@@ -222,6 +223,12 @@ function SkillFormModal({ initial, onClose, onSaved }) {
             <div>
               <label style={{ fontSize: '0.82rem', fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Tags <span style={{ color: '#aaa', fontWeight: 400, fontSize: '0.72rem' }}>(Enter หรือ , เพื่อเพิ่ม)</span></label>
               <TagInput tags={form.tags} onChange={tags => setForm(p => ({ ...p, tags }))} />
+            </div>
+            <div>
+              <label style={{ fontSize: '0.82rem', fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Version</label>
+              <input value={form.version} onChange={e => setForm(p => ({ ...p, version: e.target.value }))}
+                placeholder="v1.0"
+                style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: '0.85rem', fontFamily: 'monospace', boxSizing: 'border-box' }} />
             </div>
           </div>
 
@@ -391,8 +398,9 @@ function SkillCard({ skill, source, onClick }) {
           {skill.tags.length > 5 && <span style={{ fontSize: '0.63rem', color: '#aaa' }}>+{skill.tags.length - 5}</span>}
         </div>
       )}
-      <div style={{ fontSize: '0.68rem', color: '#ccc' }}>
-        {new Date(skill.created_at).toLocaleDateString('th-TH')}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 2 }}>
+        <span style={{ fontSize: '0.68rem', color: '#ccc' }}>{new Date(skill.created_at).toLocaleDateString('th-TH')}</span>
+        {skill.version && <span style={{ fontSize: '0.68rem', color: '#6b7280', background: '#f3f4f6', border: '1px solid #e5e7eb', borderRadius: 4, padding: '1px 6px', fontFamily: 'monospace' }}>{skill.version}</span>}
       </div>
     </div>
   )

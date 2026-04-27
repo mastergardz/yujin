@@ -20,6 +20,7 @@ class SkillCreate(BaseModel):
     tags: Optional[List[str]] = []
     content: str
     refs: Optional[List[SkillRef]] = []
+    version: Optional[str] = "v1.0"
 
 class SkillUpdate(BaseModel):
     name: Optional[str] = None
@@ -28,6 +29,7 @@ class SkillUpdate(BaseModel):
     tags: Optional[List[str]] = None
     content: Optional[str] = None
     refs: Optional[List[SkillRef]] = None
+    version: Optional[str] = None
 
 async def get_refs(skill_id: str, db: AsyncSession):
     result = await db.execute(
@@ -46,9 +48,9 @@ async def save_refs(skill_id: str, refs: List[SkillRef], db: AsyncSession):
 
 @router.get("/")
 async def list_skills(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(text("SELECT id, name, description, category, tags, created_at FROM yujin_skills ORDER BY created_at DESC"))
+    result = await db.execute(text("SELECT id, name, description, category, tags, version, created_at FROM yujin_skills ORDER BY created_at DESC"))
     rows = result.fetchall()
-    return [{"id": str(r.id), "name": r.name, "description": r.description, "category": r.category or "general", "tags": r.tags or [], "created_at": r.created_at.isoformat()} for r in rows]
+    return [{"id": str(r.id), "name": r.name, "description": r.description, "category": r.category or "general", "tags": r.tags or [], "version": r.version or "v1.0", "created_at": r.created_at.isoformat()} for r in rows]
 
 @router.get("/{skill_id}/export")
 async def export_skill(skill_id: str, db: AsyncSession = Depends(get_db)):
@@ -90,14 +92,14 @@ async def get_skill(skill_id: str, db: AsyncSession = Depends(get_db)):
     if not r:
         raise HTTPException(status_code=404, detail="Skill not found")
     refs = await get_refs(skill_id, db)
-    return {"id": str(r.id), "name": r.name, "description": r.description, "category": r.category or "general", "tags": r.tags or [], "content": r.content, "refs": refs, "created_at": r.created_at.isoformat()}
+    return {"id": str(r.id), "name": r.name, "description": r.description, "category": r.category or "general", "tags": r.tags or [], "content": r.content, "refs": refs, "version": r.version or "v1.0", "created_at": r.created_at.isoformat()}
 
 @router.post("/")
 async def create_skill(data: SkillCreate, db: AsyncSession = Depends(get_db)):
     skill_id = str(uuid.uuid4())
     await db.execute(text(
-        "INSERT INTO yujin_skills (id, name, description, category, tags, content) VALUES (:id, :name, :desc, :cat, cast(:tags as jsonb), :content)"
-    ), {"id": skill_id, "name": data.name, "desc": data.description, "cat": data.category or "general", "tags": json.dumps(data.tags or []), "content": data.content})
+        "INSERT INTO yujin_skills (id, name, description, category, tags, content, version) VALUES (:id, :name, :desc, :cat, cast(:tags as jsonb), :content, :ver)"
+    ), {"id": skill_id, "name": data.name, "desc": data.description, "cat": data.category or "general", "tags": json.dumps(data.tags or []), "content": data.content, "ver": data.version or "v1.0"})
     await db.flush()
     if data.refs:
         await save_refs(skill_id, data.refs, db)
@@ -121,6 +123,8 @@ async def update_skill(skill_id: str, data: SkillUpdate, db: AsyncSession = Depe
         await db.execute(text("UPDATE yujin_skills SET tags = cast(:v as jsonb) WHERE id = :id"), {"v": json.dumps(data.tags), "id": skill_id})
     if data.refs is not None:
         await save_refs(skill_id, data.refs, db)
+    if data.version is not None:
+        await db.execute(text("UPDATE yujin_skills SET version = :v WHERE id = :id"), {"v": data.version, "id": skill_id})
     await db.commit()
     return {"success": True}
 
