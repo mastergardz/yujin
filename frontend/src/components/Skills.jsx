@@ -315,7 +315,14 @@ function SkillDetail({ skill, source, onClose, onEdit, onDelete }) {
                 </div>
               )}
             </div>
-            <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.2rem', color: '#bbb', flexShrink: 0 }}>✕</button>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8, flexShrink: 0 }}>
+              {skill.version && (
+                <span style={{ fontSize: '0.72rem', color: '#6b7280', background: '#f3f4f6', border: '1px solid #e5e7eb', borderRadius: 5, padding: '2px 8px', fontFamily: 'monospace', fontWeight: 600 }}>
+                  {skill.version}
+                </span>
+              )}
+              <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.2rem', color: '#bbb', lineHeight: 1 }}>✕</button>
+            </div>
           </div>
         </div>
 
