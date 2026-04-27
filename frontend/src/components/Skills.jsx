@@ -295,7 +295,7 @@ function SkillDetail({ skill, source, onClose, onEdit, onDelete }) {
                   background: isLibrary ? '#eff6ff' : '#f5f0ff',
                   color: isLibrary ? '#1d4ed8' : '#7c3aed',
                   border: `1px solid ${isLibrary ? '#bfdbfe' : '#e9d5ff'}` }}>
-                  {isLibrary ? '📦 Skills Library' : '⚡ Yujin'}
+                  {isLibrary ? '📦 Skills Library' : '🎙 AI Conductor'}
                 </span>
                 {skill.category && (
                   <span style={{ fontSize: '0.7rem', background: '#f3f4f6', color: '#6b7280', padding: '2px 9px', borderRadius: 8 }}>{catLabel(skill.category)}</span>
@@ -407,7 +407,7 @@ function SectionDivider({ isLibrary, count }) {
         color: isLibrary ? '#1d4ed8' : '#7c3aed',
         background: isLibrary ? '#eff6ff' : '#f5f0ff',
         border: `1px solid ${isLibrary ? '#bfdbfe' : '#e9d5ff'}` }}>
-        {isLibrary ? '📦 Skills Library' : '⚡ สร้างจาก Yujin'} · {count} skill
+        {isLibrary ? '📦 Skills Library' : '🎙 AI Conductor'} · {count} skill
       </span>
       <div style={{ height: 1, flex: 1, background: isLibrary ? '#dbeafe' : '#f0eeff' }} />
     </div>
@@ -425,7 +425,7 @@ function parseSkillName(text) {
   return m ? m[1].trim() : 'skill'
 }
 function parseRefPaths(text) {
-  const re = new RegExp('references/[^\\s\\'"]+\\.md', 'g')
+  const re = new RegExp("references/[^\\s]+\\.md", "g")
   const matches = text.matchAll(re)
   return [...new Set([...matches].map(m => m[0]))]
 }
@@ -731,6 +731,43 @@ export default function Skills() {
     await loadYujin()
   }
 
+  const handleImportSkill = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    try {
+      const JSZip = (await import('jszip')).default
+      const zip = await JSZip.loadAsync(file)
+      let skillContent = ''
+      const refs = []
+      for (const [relativePath, zipEntry] of Object.entries(zip.files)) {
+        if (zipEntry.dir) continue
+        const parts = relativePath.split('/')
+        const filename = parts[parts.length - 1]
+        if (filename === 'SKILL.md') {
+          skillContent = await zipEntry.async('string')
+        } else if (relativePath.includes('references/') && filename.endsWith('.md')) {
+          const refContent = await zipEntry.async('string')
+          const refPath = parts.slice(parts.findIndex(p => p === 'references')).join('/')
+          refs.push({ path: refPath, content: refContent })
+        }
+      }
+      if (!skillContent) {
+        // ไม่มี zip — อ่านเป็น text ตรงๆ
+        skillContent = await file.text()
+      }
+      const nameMatch = skillContent.match(/^---[\s\S]*?name:\s*(.+?)[\s\S]*?---/m)
+      const name = nameMatch ? nameMatch[1].trim() : file.name.replace(/\.skill$|\.zip$|\.md$/, '')
+      await fetch('/api/skills/', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, description: '', category: 'general', tags: [], content: skillContent, refs })
+      })
+      loadYujin()
+    } catch {
+      alert('ไม่สามารถอ่านไฟล์ได้ค่ะ')
+    }
+  }
+
   const openView = async (skill, source) => {
     if (source === 'library') {
       try {
@@ -773,14 +810,14 @@ export default function Skills() {
       <div style={{ padding: '18px 28px 0', flexShrink: 0, borderBottom: '2px solid #f0eeff' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
           <h2 style={{ margin: 0, fontSize: '1.15rem' }}>📚 Skills</h2>
-          <button onClick={() => setFormModal({ initial: null })}
-            style={{ padding: '8px 18px', borderRadius: 10, border: 'none', background: '#7c3aed', color: 'white', fontWeight: 700, cursor: 'pointer', fontSize: '0.86rem' }}>
-            + Skill ใหม่
-          </button>
+          <label style={{ padding: '8px 18px', borderRadius: 10, border: 'none', background: '#7c3aed', color: 'white', fontWeight: 700, cursor: 'pointer', fontSize: '0.86rem', display: 'inline-block' }}>
+            ⬆️ Import .skill
+            <input type="file" accept=".skill,.zip" style={{ display: 'none' }} onChange={handleImportSkill} />
+          </label>
         </div>
 
         {/* Search + Category filter — hide on creator tab */}
-        {tab !== 'creator' && <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
           <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
             <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#bbb', fontSize: '0.9rem', pointerEvents: 'none' }}>🔍</span>
             <input value={search} onChange={e => setSearch(e.target.value)}
@@ -807,15 +844,14 @@ export default function Skills() {
               )
             })}
           </div>
-        </div>}
+        </div>
 
         {/* Source tabs */}
         <div style={{ display: 'flex', gap: 2 }}>
           {[
             { key: 'all', label: 'ทั้งหมด', count: filteredYujin.length + filteredLibrary.length },
-            { key: 'yujin', label: '⚡ Yujin', count: filteredYujin.length },
             { key: 'library', label: '📦 Skills Library', count: filteredLibrary.length },
-            { key: 'creator', label: '🤖 AI Creator', count: null },
+            { key: 'yujin', label: '🎙 AI Conductor', count: filteredYujin.length },
           ].map(t => (
             <button key={t.key} onClick={() => setTab(t.key)}
               style={{ padding: '8px 16px', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.83rem',
@@ -830,25 +866,7 @@ export default function Skills() {
       </div>
 
       {/* Content */}
-      {tab === 'creator' ? (
-        <AICreator onSkillSaved={() => { loadYujin(); setTab('yujin') }} />
-      ) : (
       <div style={{ flex: 1, overflowY: 'auto', padding: '20px 28px 28px' }}>
-
-        {(tab === 'all' || tab === 'yujin') && (
-          <div style={{ marginBottom: tab === 'all' ? 32 : 0 }}>
-            {tab === 'all' && <SectionDivider isLibrary={false} count={filteredYujin.length} />}
-            {filteredYujin.length === 0 ? (
-              <div style={{ textAlign: 'center', color: '#bbb', padding: '20px 0', fontSize: '0.84rem' }}>
-                {tab === 'yujin' ? 'ยังไม่มี skill ค่ะ กด "+ Skill ใหม่" เพื่อสร้าง' : 'ไม่มีผล'}
-              </div>
-            ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: 10 }}>
-                {filteredYujin.map(s => <SkillCard key={s.id} skill={s} source="yujin" onClick={() => openView(s, 'yujin')} />)}
-              </div>
-            )}
-          </div>
-        )}
 
         {(tab === 'all' || tab === 'library') && (
           <div>
@@ -872,6 +890,21 @@ export default function Skills() {
           </div>
         )}
 
+        {(tab === 'all' || tab === 'yujin') && (
+          <div style={{ marginBottom: 0 }}>
+            {tab === 'all' && <SectionDivider isLibrary={false} count={filteredYujin.length} />}
+            {filteredYujin.length === 0 ? (
+              <div style={{ textAlign: 'center', color: '#bbb', padding: '20px 0', fontSize: '0.84rem' }}>
+                {tab === 'yujin' ? 'ยังไม่มี skill จาก AI Conductor ค่ะ' : 'ไม่มีผล'}
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: 10 }}>
+                {filteredYujin.map(s => <SkillCard key={s.id} skill={s} source="yujin" onClick={() => openView(s, 'yujin')} />)}
+              </div>
+            )}
+          </div>
+        )}
+
         {!loadingLib && filteredYujin.length + filteredLibrary.length === 0 && (search || catFilter !== 'all') && (
           <div style={{ textAlign: 'center', color: '#aaa', marginTop: 40 }}>
             <div style={{ fontSize: '2rem' }}>🔍</div>
@@ -879,7 +912,6 @@ export default function Skills() {
           </div>
         )}
       </div>
-      )}
     </div>
   )
 }
