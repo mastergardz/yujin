@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import JSZip from 'jszip'
 
 const LIBRARY_URL = 'http://119.59.103.122:8040'
@@ -413,6 +413,278 @@ function SectionDivider({ isLibrary, count }) {
   )
 }
 
+
+// ─── AI Creator ───────────────────────────────────────────────────────────────
+const STORAGE_KEY_YUJIN = 'yujin_skill_creator_history'
+
+function parseSkillName(text) {
+  const m = text.match(/^---[\s\S]*?name:\s*(.+?)[\s\S]*?---/m)
+  return m ? m[1].trim() : 'skill'
+}
+function parseRefPaths(text) {
+  const re = new RegExp('references/[^\\s\\'"]+\\.md', 'g')
+  const matches = text.matchAll(re)
+  return [...new Set([...matches].map(m => m[0]))]
+}
+function isSkillContent(text) {
+  return /^---[\s\S]+?---/m.test(text)
+}
+
+async function downloadSkillZip(text) {
+  const skillName = parseSkillName(text)
+  const folderName = skillName.replace(/\s+/g, '-').toLowerCase()
+  const refPaths = parseRefPaths(text)
+  const JSZip = (await import('jszip')).default
+  const zip = new JSZip()
+  zip.file(`${folderName}/SKILL.md`, text)
+  for (const refPath of refPaths) {
+    const filename = refPath.split('/').pop()
+    zip.file(`${folderName}/${refPath}`, `# ${filename.replace('.md','').replace(/-/g,' ')}\n\n<!-- เพิ่มเนื้อหา reference ที่นี่ -->\n`)
+  }
+  const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url; a.download = `${folderName}.skill`; a.click()
+  URL.revokeObjectURL(url)
+}
+
+function AIChatBubble({ msg, onSaveToYujin }) {
+  const [copied, setCopied] = useState(false)
+  const [downloading, setDownloading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const isSkill = msg.role === 'assistant' && isSkillContent(msg.content)
+
+  const handleCopy = () => {
+    navigator.clipboard?.writeText(msg.content).catch(() => {})
+    setCopied(true); setTimeout(() => setCopied(false), 2000)
+  }
+  const handleDownload = async () => {
+    setDownloading(true)
+    await downloadSkillZip(msg.content)
+    setDownloading(false)
+  }
+  const handleSave = async () => {
+    setSaving(true)
+    await onSaveToYujin(msg.content)
+    setSaving(false); setSaved(true)
+    setTimeout(() => setSaved(false), 3000)
+  }
+
+  return (
+    <div style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start', marginBottom: 12 }}>
+      <div style={{
+        maxWidth: '82%', padding: '10px 14px', borderRadius: msg.role === 'user' ? '18px 18px 4px 18px' : '4px 18px 18px 18px',
+        background: msg.role === 'user' ? '#7c3aed' : '#f8f7ff',
+        color: msg.role === 'user' ? 'white' : '#1a1a2e',
+        border: msg.role === 'user' ? 'none' : '1px solid #ede9fe',
+        fontSize: '0.86rem', lineHeight: 1.65,
+      }}>
+        {msg.files?.map((f, i) => (
+          <div key={i} style={{ marginBottom: 8 }}>
+            {f.type === 'image'
+              ? <img src={`data:${f.mime_type};base64,${f.data}`} alt={f.name} style={{ maxWidth: 220, maxHeight: 160, borderRadius: 6, display: 'block' }} />
+              : <div style={{ fontSize: '0.75rem', background: 'rgba(0,0,0,0.06)', borderRadius: 4, padding: '3px 8px' }}>📄 {f.name}</div>
+            }
+          </div>
+        ))}
+        <span style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</span>
+        {msg.role === 'assistant' && (
+          <div style={{ display: 'flex', gap: 5, marginTop: 10, flexWrap: 'wrap' }}>
+            {isSkill && (
+              <>
+                <button onClick={handleSave} disabled={saving || saved}
+                  style={{ padding: '4px 11px', borderRadius: 6, border: '1.5px solid #a7f3d0', background: saved ? '#dcfce7' : '#f0fdf4', color: saved ? '#15803d' : '#059669', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600 }}>
+                  {saved ? '✅ บันทึกแล้ว' : saving ? '⏳...' : '💾 บันทึกเข้า Yujin'}
+                </button>
+                <button onClick={handleDownload} disabled={downloading}
+                  style={{ padding: '4px 11px', borderRadius: 6, border: '1.5px solid #bfdbfe', background: '#eff6ff', color: '#1d4ed8', cursor: 'pointer', fontSize: '0.75rem' }}>
+                  {downloading ? '⏳' : '⬇️'} Download .skill
+                </button>
+              </>
+            )}
+            <button onClick={handleCopy}
+              style={{ padding: '4px 11px', borderRadius: 6, border: '1.5px solid #e5e7eb', background: copied ? '#dcfce7' : '#f3f4f6', color: copied ? '#16a34a' : '#6b7280', cursor: 'pointer', fontSize: '0.75rem' }}>
+              {copied ? '✓ Copied' : 'Copy'}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function AICreator({ onSkillSaved }) {
+  const GEMINI_KEY_STORAGE = 'yujin_gemini_key'
+  const [messages, setMessages] = useState(() => {
+    try { const s = localStorage.getItem(STORAGE_KEY_YUJIN); if (s) return JSON.parse(s) } catch {}
+    return [{ role: 'assistant', content: 'สวัสดีค่า! หนูคือ Skill Creator ช่วยออกแบบ skill .md ให้นะคะ\n\nบอกหนูได้เลยว่าอยากสร้าง skill อะไร หรือแนบไฟล์/รูปมาได้เลย 😊', files: [] }]
+  })
+  const [input, setInput] = useState('')
+  const [files, setFiles] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [clearConfirm, setClearConfirm] = useState(false)
+  const [geminiKey, setGeminiKey] = useState(() => localStorage.getItem(GEMINI_KEY_STORAGE) || '')
+  const [showKeyInput, setShowKeyInput] = useState(false)
+  const bottomRef = useRef(null)
+  const fileInputRef = useRef(null)
+
+  useEffect(() => {
+    try { localStorage.setItem(STORAGE_KEY_YUJIN, JSON.stringify(messages)) } catch {}
+  }, [messages])
+
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages, loading])
+
+  const saveKey = (k) => { setGeminiKey(k); localStorage.setItem(GEMINI_KEY_STORAGE, k); setShowKeyInput(false) }
+
+  const uploadFile = async (rawFile) => {
+    const fd = new FormData(); fd.append('file', rawFile)
+    const r = await fetch('/api/ai/upload', { method: 'POST', body: fd })
+    if (!r.ok) throw new Error('Upload failed')
+    return r.json()
+  }
+
+  const handleFileInput = async (e) => {
+    if (!e.target.files?.length) return
+    const uploaded = await Promise.all(Array.from(e.target.files).map(uploadFile))
+    setFiles(prev => [...prev, ...uploaded])
+    e.target.value = ''
+  }
+
+  const handlePaste = async (e) => {
+    const items = e.clipboardData?.items
+    if (!items) return
+    const imgs = Array.from(items).filter(i => i.kind === 'file' && i.type.startsWith('image/'))
+    if (imgs.length > 0) {
+      e.preventDefault()
+      const uploaded = await Promise.all(imgs.map(i => uploadFile(i.getAsFile())))
+      setFiles(prev => [...prev, ...uploaded])
+    }
+  }
+
+  const handleDrop = async (e) => {
+    e.preventDefault()
+    if (e.dataTransfer.files?.length) {
+      const uploaded = await Promise.all(Array.from(e.dataTransfer.files).map(uploadFile))
+      setFiles(prev => [...prev, ...uploaded])
+    }
+  }
+
+  const send = async () => {
+    if ((!input.trim() && files.length === 0) || loading) return
+    if (!geminiKey) { setShowKeyInput(true); return }
+    const userMsg = { role: 'user', content: input.trim(), files: [...files] }
+    const history = messages.map(m => ({ role: m.role, content: m.content, files: m.files || [] }))
+    setMessages(prev => [...prev, userMsg]); setInput(''); setFiles([]); setLoading(true)
+    try {
+      const r = await fetch('/api/ai/chat', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: userMsg.content, history, gemini_api_key: geminiKey })
+      })
+      const d = await r.json()
+      setMessages(prev => [...prev, { role: 'assistant', content: d.reply || d.detail || 'Error', files: [] }])
+    } catch {
+      setMessages(prev => [...prev, { role: 'assistant', content: '⚠ Connection error', files: [] }])
+    }
+    setLoading(false)
+  }
+
+  const handleKey = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }
+
+  const handleClear = () => {
+    if (!clearConfirm) { setClearConfirm(true); setTimeout(() => setClearConfirm(false), 3000); return }
+    const init = [{ role: 'assistant', content: 'สวัสดีค่า! หนูคือ Skill Creator ช่วยออกแบบ skill .md ให้นะคะ\n\nบอกหนูได้เลยว่าอยากสร้าง skill อะไร หรือแนบไฟล์/รูปมาได้เลย 😊', files: [] }]
+    setMessages(init); localStorage.setItem(STORAGE_KEY_YUJIN, JSON.stringify(init)); setClearConfirm(false)
+  }
+
+  const saveToYujin = async (skillContent) => {
+    const name = parseSkillName(skillContent) || 'untitled-skill'
+    const refPaths = parseRefPaths(skillContent)
+    const refs = refPaths.map(p => ({ path: p, content: '' }))
+    await fetch('/api/skills/', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, description: '', category: 'general', tags: [], content: skillContent, refs })
+    })
+    onSkillSaved()
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {/* Top bar */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 28px 12px', borderBottom: '1px solid #f0eeff', flexShrink: 0 }}>
+        <div style={{ fontSize: '0.84rem', color: '#888' }}>สร้าง skill ด้วย AI — พิมพ์บอกว่าอยากได้ skill แบบไหน</div>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          {!geminiKey && !showKeyInput && (
+            <span style={{ fontSize: '0.75rem', color: '#f59e0b', background: '#fef3c7', padding: '3px 10px', borderRadius: 7, border: '1px solid #fde68a' }}>
+              ⚠ ยังไม่มี Gemini API Key
+            </span>
+          )}
+          <button onClick={() => setShowKeyInput(v => !v)}
+            style={{ padding: '5px 12px', borderRadius: 8, border: '1.5px solid #e5e7eb', background: 'white', color: '#6b7280', cursor: 'pointer', fontSize: '0.78rem' }}>
+            🔑 {geminiKey ? 'เปลี่ยน Key' : 'ตั้งค่า API Key'}
+          </button>
+          <button onClick={handleClear}
+            style={{ padding: '5px 12px', borderRadius: 8, border: `1.5px solid ${clearConfirm ? '#fca5a5' : '#e5e7eb'}`, background: clearConfirm ? '#fff1f2' : 'white', color: clearConfirm ? '#dc2626' : '#6b7280', cursor: 'pointer', fontSize: '0.78rem' }}>
+            {clearConfirm ? 'ยืนยัน Clear?' : '🗑 Clear'}
+          </button>
+        </div>
+      </div>
+
+      {/* API Key input */}
+      {showKeyInput && (
+        <div style={{ padding: '10px 28px', background: '#fffbeb', borderBottom: '1px solid #fde68a', display: 'flex', gap: 8, alignItems: 'center' }}>
+          <input type="password" placeholder="Gemini API Key..."
+            defaultValue={geminiKey}
+            onKeyDown={e => e.key === 'Enter' && saveKey(e.target.value)}
+            style={{ flex: 1, padding: '7px 12px', borderRadius: 8, border: '1.5px solid #fde68a', fontSize: '0.85rem', fontFamily: 'monospace' }}
+            id="gemini-key-input"
+          />
+          <button onClick={() => saveKey(document.getElementById('gemini-key-input').value)}
+            style={{ padding: '7px 16px', borderRadius: 8, border: 'none', background: '#7c3aed', color: 'white', cursor: 'pointer', fontSize: '0.83rem', fontWeight: 600 }}>บันทึก</button>
+        </div>
+      )}
+
+      {/* Messages */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '16px 28px' }}
+        onDrop={handleDrop} onDragOver={e => e.preventDefault()}>
+        {messages.map((m, i) => <AIChatBubble key={i} msg={m} onSaveToYujin={saveToYujin} />)}
+        {loading && (
+          <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: 12 }}>
+            <div style={{ padding: '10px 16px', borderRadius: '4px 18px 18px 18px', background: '#f8f7ff', border: '1px solid #ede9fe', color: '#9ca3af', fontSize: '0.84rem' }}>
+              กำลังคิดอยู่...
+            </div>
+          </div>
+        )}
+        <div ref={bottomRef} />
+      </div>
+
+      {/* File chips */}
+      {files.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, padding: '6px 28px 0' }}>
+          {files.map((f, i) => (
+            <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: '#eff6ff', border: '1px solid #dbeafe', borderRadius: 6, padding: '3px 8px', fontSize: '0.75rem', color: '#2563eb' }}>
+              {f.type === 'image' ? '🖼' : '📄'} <span style={{ maxWidth: 100, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
+              <button onClick={() => setFiles(prev => prev.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#93c5fd', fontSize: 13, lineHeight: 1, padding: 0 }}>×</button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Input row */}
+      <div style={{ padding: '10px 28px 18px', display: 'flex', gap: 8, alignItems: 'flex-end', borderTop: '1px solid #f0eeff', flexShrink: 0 }}>
+        <textarea value={input} onChange={e => setInput(e.target.value)} onKeyDown={handleKey} onPaste={handlePaste}
+          rows={2} placeholder="พิมพ์ข้อความ, วางรูป (Ctrl+V), หรือลากไฟล์มาวางได้เลย... (Enter ส่ง, Shift+Enter ขึ้นบรรทัด)"
+          style={{ flex: 1, padding: '9px 14px', borderRadius: 10, border: '1.5px solid #e5e5ea', fontSize: '0.87rem', fontFamily: 'inherit', resize: 'none', outline: 'none', lineHeight: 1.5 }} />
+        <button onClick={() => fileInputRef.current?.click()}
+          style={{ padding: '9px 13px', borderRadius: 10, border: '1.5px solid #e5e7eb', background: 'white', cursor: 'pointer', fontSize: '1rem', flexShrink: 0 }} title="แนบไฟล์">📎</button>
+        <button onClick={send} disabled={loading}
+          style={{ padding: '9px 20px', borderRadius: 10, border: 'none', background: loading ? '#c4b5fd' : '#7c3aed', color: 'white', fontWeight: 700, cursor: loading ? 'default' : 'pointer', fontSize: '0.87rem', flexShrink: 0 }}>ส่ง</button>
+      </div>
+      <input ref={fileInputRef} type="file" multiple accept="image/*,.md,.txt,.pdf,.json,.yaml,.csv" style={{ display: 'none' }} onChange={handleFileInput} />
+    </div>
+  )
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function Skills() {
   const [yujinSkills, setYujinSkills] = useState([])
@@ -501,8 +773,8 @@ export default function Skills() {
           </button>
         </div>
 
-        {/* Search + Category filter */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+        {/* Search + Category filter — hide on creator tab */}
+        {tab !== 'creator' && <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
           <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
             <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#bbb', fontSize: '0.9rem', pointerEvents: 'none' }}>🔍</span>
             <input value={search} onChange={e => setSearch(e.target.value)}
@@ -529,7 +801,7 @@ export default function Skills() {
               )
             })}
           </div>
-        </div>
+        </div>}
 
         {/* Source tabs */}
         <div style={{ display: 'flex', gap: 2 }}>
@@ -537,6 +809,7 @@ export default function Skills() {
             { key: 'all', label: 'ทั้งหมด', count: filteredYujin.length + filteredLibrary.length },
             { key: 'yujin', label: '⚡ Yujin', count: filteredYujin.length },
             { key: 'library', label: '📦 Skills Library', count: filteredLibrary.length },
+            { key: 'creator', label: '🤖 AI Creator', count: null },
           ].map(t => (
             <button key={t.key} onClick={() => setTab(t.key)}
               style={{ padding: '8px 16px', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.83rem',
@@ -544,13 +817,16 @@ export default function Skills() {
                 color: tab === t.key ? '#7c3aed' : '#888',
                 borderBottom: tab === t.key ? '2.5px solid #7c3aed' : '2.5px solid transparent',
                 marginBottom: -2 }}>
-              {t.label} <span style={{ fontSize: '0.75rem', opacity: 0.7 }}>({t.count})</span>
+              {t.label}{t.count !== null && <span style={{ fontSize: '0.75rem', opacity: 0.7 }}> ({t.count})</span>}
             </button>
           ))}
         </div>
       </div>
 
       {/* Content */}
+      {tab === 'creator' ? (
+        <AICreator onSkillSaved={() => { loadYujin(); setTab('yujin') }} />
+      ) : (
       <div style={{ flex: 1, overflowY: 'auto', padding: '20px 28px 28px' }}>
 
         {(tab === 'all' || tab === 'yujin') && (
@@ -597,6 +873,7 @@ export default function Skills() {
           </div>
         )}
       </div>
+      )}
     </div>
   )
 }
