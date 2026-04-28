@@ -72,9 +72,22 @@ async def db_tool(query: str, params: Optional[dict] = None) -> dict:
 FILES_DIR = Path("/root/yujin/backend/generated_files")
 FILES_DIR.mkdir(exist_ok=True)
 
-async def file_tool(filename: str, content: str, file_type: str = "txt") -> dict:
+async def file_tool(filename: str, content: str, file_type: str = "txt", output_path: str = None) -> dict:
     """Worker creates a file and returns download info"""
     try:
+        # ถ้าระบุ output_path — เขียนตรงไปที่ path นั้นเลย
+        if output_path:
+            import os
+            os.makedirs(os.path.dirname(output_path) if os.path.dirname(output_path) else '.', exist_ok=True)
+            Path(output_path).write_text(content, encoding='utf-8')
+            return {
+                "success": True,
+                "filename": os.path.basename(output_path),
+                "path": output_path,
+                "download_url": None,
+                "size": Path(output_path).stat().st_size
+            }
+
         safe_name = "".join(c for c in filename if c.isalnum() or c in "._- ").strip() or "output"
         uid = str(uuid.uuid4())[:8]
 
@@ -231,7 +244,7 @@ TOOLS = {
     "file_tool": {
         "fn": file_tool,
         "description": "สร้างไฟล์ txt/csv/json/xlsx/pdf ให้ download",
-        "params": {"filename": "str", "content": "str", "file_type": "txt|csv|json|xlsx|pdf"}
+        "params": {"filename": "str", "content": "str", "file_type": "txt|csv|json|xlsx|pdf", "output_path": "str (optional) — path เต็มบน VPS เช่น /tmp/test.txt"}
     },
     "image_tool": {
         "fn": image_tool,

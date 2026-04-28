@@ -46,6 +46,7 @@ def format_cost_summary(usage_list: list) -> str:
 def parse_tool_call(text: str):
     patterns = [
         r'```tool_call\s*([\s\S]*?)```',
+        r'```tool_code\s*([\s\S]*?)```',
         r'<tool_call>([\s\S]*?)</tool_call>',
     ]
     for pattern in patterns:
@@ -189,7 +190,7 @@ async def run_worker_with_tools(member: ProjectMember, worker_task: str, big_tas
             final_reply = resp
             break
         tool_name, params = tool_call
-        clean = re.sub(r'```tool_call[\s\S]*?```', '', resp).strip()
+        clean = re.sub(r'```(?:tool_call|tool_code)[\s\S]*?```', '', resp).strip()
         if clean and broadcast_fn:
             await broadcast_fn(member.name, "worker", clean)
         if broadcast_fn:
